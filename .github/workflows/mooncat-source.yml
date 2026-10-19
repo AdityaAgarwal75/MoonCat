@@ -26,10 +26,14 @@ jobs:
           git -C "$work" archive FETCH_HEAD | tar -x -C "$work/source"
           rsync -a --exclude=.git --exclude=.github "$work/source/" ./
           python3 - <<'PY'
-          import json,base64,pathlib
+          import json,base64,pathlib,subprocess,tempfile
           root=pathlib.Path.cwd().resolve()
           data=json.loads(pathlib.Path('mooncat/overlay.json').read_text())
           assert data['upstream']=='c613e93111353283b42c12d516788c19df504c3c'
+          if data.get('patch'):
+              patch=pathlib.Path(tempfile.gettempdir())/'mooncat-source.patch'
+              patch.write_bytes(base64.b64decode(data['patch']))
+              subprocess.run(['git','apply','--binary',str(patch)],check=True)
           for entry in data['files']:
               path=root/entry['path']
               assert path.resolve().is_relative_to(root)
@@ -45,3 +49,19 @@ jobs:
             git commit -m 'feat: import GPL player and MoonCat Fire TV customizations'
             git push origin HEAD:main
           fi
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Compile and test on build runner
+        env:
+          CI_USE_DEBUG_SIGNING: 'true'
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+          chmod +x gradlew
+          ./gradlew :app:assembleFullRelease :app:testFullReleaseUnitTest --tests 'com.nuvio.tv.core.mooncat.*' --tests 'com.nuvio.tv.core.catalog.*' --tests 'com.nuvio.tv.ui.screens.player.AudioLanguageChoicesTest' --tests 'com.nuvio.tv.ui.screens.player.AudioSourceIdentityTest' '-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m' --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-build-for-owner-signing
+          path: app/build/outputs/apk/full/release/*.apk
