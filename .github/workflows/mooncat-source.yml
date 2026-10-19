@@ -1,0 +1,47 @@
+name: Import pinned MoonCat source
+on:
+  push:
+    paths: ['mooncat/overlay.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mooncat-source
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Import pinned GPL upstream and apply reviewed MoonCat files
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          git -C "$work" init -q
+          git -C "$work" fetch --depth 1 https://github.com/NuvioMedia/NuvioTV.git c613e93111353283b42c12d516788c19df504c3c
+          mkdir "$work/source"
+          git -C "$work" archive FETCH_HEAD | tar -x -C "$work/source"
+          rsync -a --exclude=.git --exclude=.github "$work/source/" ./
+          python3 - <<'PY'
+          import json,base64,pathlib
+          root=pathlib.Path.cwd().resolve()
+          data=json.loads(pathlib.Path('mooncat/overlay.json').read_text())
+          assert data['upstream']=='c613e93111353283b42c12d516788c19df504c3c'
+          for entry in data['files']:
+              path=root/entry['path']
+              assert path.resolve().is_relative_to(root)
+              assert not set(path.relative_to(root).parts)&{'.git','local.properties','local.dev.properties'}
+              path.parent.mkdir(parents=True,exist_ok=True)
+              path.write_bytes(base64.b64decode(entry['content']))
+          PY
+          git add --all
+          git add -f docs/MOONCAT-BUILD.md NOTICE.md README.md
+          git config user.name 'MoonCat Build'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: import GPL player and MoonCat Fire TV customizations'
+            git push origin HEAD:main
+          fi
