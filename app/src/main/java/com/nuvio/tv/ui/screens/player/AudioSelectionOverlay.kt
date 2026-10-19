@@ -332,12 +332,11 @@ private fun AudioTrackCard(
     ).joinToString(" | ")
 
     Card(
-        onClick = onClick,
-        enabled = track.isSupported,
+        onClick = { if (track.isSupported) onClick() },
         modifier = Modifier
             .fillMaxWidth()
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusProperties { right = rightFocusRequester }
+            .focusProperties { right = rightFocusRequester; canFocus = track.isSupported }
             .onFocusChanged { if (it.isFocused) onFocused() },
         colors = CardDefaults.colors(
             containerColor = if (isSelected) NuvioTheme.colors.Secondary else Color.Transparent,
