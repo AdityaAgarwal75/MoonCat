@@ -1,0 +1,44 @@
+name: Publish signed MoonCat APK
+on:
+  push:
+    paths: ['mooncat/release.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mooncat-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble verified, locally signed APK
+        id: release
+        run: |
+          python3 - <<'PY'
+          import json,pathlib,hashlib,os,re
+          manifest=json.loads(pathlib.Path('mooncat/release.json').read_text())
+          assert re.fullmatch(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?',manifest['tag'])
+          out=pathlib.Path('dist');out.mkdir(exist_ok=True)
+          target=out/'MoonCat-armeabi-v7a.apk'
+          with target.open('wb') as stream:
+              for entry in manifest['parts']:
+                  path=pathlib.Path(entry)
+                  assert path.is_relative_to('mooncat/apk-parts') and '..' not in path.parts
+                  stream.write(path.read_bytes())
+          digest=hashlib.sha256(target.read_bytes()).hexdigest()
+          assert digest==manifest['sha256'],'APK checksum mismatch'
+          (out/'SHA256SUMS').write_text(digest+'  '+target.name+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:f.write('tag='+manifest['tag']+'\n')
+          PY
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/MoonCat-armeabi-v7a.apk dist/SHA256SUMS --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/MoonCat-armeabi-v7a.apk dist/SHA256SUMS --title "MoonCat $RELEASE_TAG" --notes-file mooncat/RELEASE-NOTES.md --target "$GITHUB_SHA"
+          fi
