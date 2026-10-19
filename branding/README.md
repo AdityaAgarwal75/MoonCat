@@ -1,0 +1,1 @@
+MoonCat logo generated using the built-in image generator. Prompt: premium minimal champagne-gold crescent moon joined to a cat silhouette on midnight charcoal, recognizable at small sizes; no text. Launcher densities and wordmark rendered from this source for Android packaging.
