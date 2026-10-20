@@ -1,0 +1,39 @@
+name: Publish MoonCat v1.0.4 Fire TV APK
+on:
+  push:
+    branches: [verify/tv-dpad]
+    paths:
+      - '.github/workflows/mooncat-publish-v104.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download original-key signed Fire TV APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 420 \
+            "https://mooncat.15-252-234-187.sslip.io/MoonCat-v1.0.4-FireTV.apk" \
+            -o MoonCat-v1.0.4-FireTV.apk
+          echo "442e98830f31cacff85c3989e3c60cbe413efb8017847be1d8dde25f57c07fbf  MoonCat-v1.0.4-FireTV.apk" | sha256sum --check
+          test "$(stat -c%s MoonCat-v1.0.4-FireTV.apk)" -eq 75738389
+      - name: Publish signed GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v1.0.4 >/dev/null 2>&1; then
+            gh release upload v1.0.4 MoonCat-v1.0.4-FireTV.apk --clobber
+          else
+            gh release create v1.0.4 MoonCat-v1.0.4-FireTV.apk \
+              --target improve/tv-discovery-playback \
+              --title "MoonCat v1.0.4 — Fire TV" \
+              --notes "Signed Fire TV APK compatible with existing MoonCat installs (dev.mooncat.tv, versionCode 10005). Updated Studios poster catalogues, Live News channel discovery, and source selection. Android mobile build is not included. APK SHA256: 442e98830f31cacff85c3989e3c60cbe413efb8017847be1d8dde25f57c07fbf."
+          fi
+          gh release view v1.0.4 --json url,assets --jq '{url:.url,assets:[.assets[].name]}'
