@@ -1,0 +1,71 @@
+name: Smoke-test MoonCat Android mobile on emulator
+
+on:
+  push:
+    branches: [build/mooncat-v102-android-verify]
+    paths: [.github/workflows/mooncat-mobile-smoke.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download signed MoonCat mobile beta
+        run: |
+          curl -fsSL --retry 3 --max-time 30 \
+            "https://mooncat.15-252-234-187.sslip.io/MoonCat-v1.0.3-Mobile.apk" \
+            -o /tmp/mooncat-mobile.apk
+
+      - name: Launch and navigate Home, Studios and News
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: |
+            set -euo pipefail
+            trap 'adb logcat -d > "$GITHUB_WORKSPACE/mooncat-mobile-smoke-logcat.txt" 2>/dev/null || true; adb exec-out screencap -p > "$GITHUB_WORKSPACE/mooncat-mobile-smoke-screen.png" 2>/dev/null || true' EXIT
+            adb install -r /tmp/mooncat-mobile.apk
+            adb logcat -c
+            adb shell am start -n dev.mooncat.mobile/.MainActivity
+            sleep 5
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null
+            adb shell cat /sdcard/window.xml | grep -q 'Discover'
+            adb shell cat /sdcard/window.xml | grep -q 'Studios'
+            adb shell cat /sdcard/window.xml | grep -q 'News'
+            SIZE="$(adb shell wm size | grep Physical | awk '{print $3}' | tr -d '\r')"
+            DENSITY="$(adb shell wm density | grep Physical | awk '{print $3}' | tr -d '\r')"
+            W="${SIZE%x*}"; H="${SIZE#*x}"
+            NAVY=$((H - 35 * DENSITY / 160))
+            adb shell input tap $((W/2)) "$NAVY"
+            sleep 3
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null
+            adb shell cat /sdcard/window.xml | grep -q 'Studios &amp; Collections'
+            adb shell input tap $((W * 5 / 6)) "$NAVY"
+            sleep 3
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null
+            adb shell cat /sdcard/window.xml | grep -q 'Live News'
+            adb shell cat /sdcard/window.xml | grep -q 'Aaj Tak'
+            if adb logcat -d | grep -E 'Process: dev.mooncat.mobile'; then
+              echo 'Mobile fatal exception detected'; exit 1
+            fi
+            echo 'PASS: Home / Studios / News navigation and no process crash'
+
+      - name: Attach screenshot and diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-mobile-emulator-evidence
+          path: |
+            mooncat-mobile-smoke-logcat.txt
+            mooncat-mobile-smoke-screen.png
+          if-no-files-found: warn
+          retention-days: 14
