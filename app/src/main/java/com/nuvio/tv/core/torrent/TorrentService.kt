@@ -123,7 +123,7 @@ class TorrentService @Inject constructor(
                     val hash = candidate.getEffectiveInfoHash() ?: return@choose false
                     val id = activeEngine.addMagnet(buildMagnetUri(hash, (DefaultTorrentTrackers + candidate.sources.orEmpty()).distinct()))
                     added.add(id)
-                    val route = activeEngine.prepareStream(id, candidate.getEffectiveFileIdx(), candidate.behaviorHints?.filename)
+                    val route = activeEngine.prepareStream(id, candidate.getEffectiveFileIdx(), candidate.behaviorHints?.filename, 65536L)
                     routes.add(route)
                     if (route.fileSize <= 0L || route.fileSize > maxFileBytes) return@choose false
                     // The engine verifies that this many media bytes are actually buffered.
