@@ -1,0 +1,47 @@
+name: MoonCat v1.0.4 ARM test APK
+on:
+  push:
+    branches: [verify/tv-dpad]
+    paths:
+      - '.github/workflows/mooncat-tv-arm-beta.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  arm-test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CI_USE_DEBUG_SIGNING: "true"
+      DOVI_NATIVE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install required Android SDK
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+      - name: Build signed ARM debug variant (separate package)
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleFullDebug -PmooncatAbi=armeabi-v7a --no-daemon --max-workers=2 -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+      - name: Verify APK signature and architecture
+        run: |
+          APK="$(find app/build/outputs/apk/full/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -E "package:|native-code:"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -q "armeabi-v7a"
+          mkdir -p deliverables
+          cp "$APK" deliverables/MoonCat-v1.0.4-FireTV-ARM-TEST.apk
+          sha256sum deliverables/*.apk | tee deliverables/SHA256SUMS
+      - name: Upload Fire TV test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-v1.0.4-FireTV-ARM-TEST
+          path: deliverables/
+          retention-days: 14
