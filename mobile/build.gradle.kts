@@ -8,8 +8,8 @@ android {
         applicationId = "dev.mooncat.mobile"
         minSdk = 24
         targetSdk = 35
-        versionCode = 10003
-        versionName = "1.0.2-beta"
+        versionCode = 10004
+        versionName = "1.0.3-beta"
     }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {

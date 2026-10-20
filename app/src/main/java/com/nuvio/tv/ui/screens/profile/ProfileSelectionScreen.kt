@@ -359,10 +359,27 @@ fun ProfileSelectionScreen(
             onProfileThemeFocused?.invoke(theme)
         }
 
-        ProfileSelectionBackground(
-            focusedAvatarColor = overlayProfileColor ?: focusedAvatarColor,
-            profileBackground = profileBackground
-        )
+        if (profileBackground != null) {
+            // User-selected artwork stays in place.
+            ProfileSelectionBackground(
+                focusedAvatarColor = overlayProfileColor ?: focusedAvatarColor,
+                profileBackground = profileBackground
+            )
+        } else {
+            // Default profile-picker background matches the moonlit TV splash.
+            // Unlike a poster screenshot, this remains a genuine interactive UI.
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF060917),
+                            Color(0xFF15182F),
+                            Color(0xFF080D20)
+                        )
+                    )
+                )
+            )
+        }
 
         AnimatedContent(
             targetState = pinOverlayState,

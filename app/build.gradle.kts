@@ -107,8 +107,8 @@ android {
         minSdk = 24
         ndk { abiFilters += listOf("armeabi-v7a") }
         targetSdk = 36
-        versionCode = 10003
-        versionName = "1.0.2"
+        versionCode = 10004
+        versionName = "1.0.3"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
