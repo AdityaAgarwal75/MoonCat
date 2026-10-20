@@ -450,7 +450,10 @@ class StreamScreenViewModel @Inject constructor(
                     contentKey = streamCacheKey,
                     maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
                 )
-                if (cached != null) {
+                if (cached != null && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.reusableRelease(
+                        cached.streamName, cached.filename, cached.videoSize, playerSettings.preferredAudioLanguage,
+                        if (season != null) 2_000_000_000L else 7_000_000_000L
+                    )) {
                     autoPlayHandledForSession = true
                     resolvedAutoPlayTarget = true
                     val isCachedTorrent = cached.infoHash != null && cached.url.isNullOrBlank()
@@ -524,6 +527,7 @@ class StreamScreenViewModel @Inject constructor(
                 contentId?.let { bingeGroupCacheDataStore.getInfoHash(it) }
             } else null
 
+            var sourceRaceInProgress = false
             suspend fun applySuccess(addonStreamGroups: List<AddonStreams>, isAllLoaded: Boolean) {
                 val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(
                     addonStreamGroups,
@@ -622,7 +626,7 @@ class StreamScreenViewModel @Inject constructor(
                 // configured timeout has elapsed. This gives slower addons a
                 // chance to return higher-quality streams before the selector
                 // picks from whatever is available.
-                val shouldAutoSelect = !autoPlayHandledForSession && !resolvedAutoPlayTarget && isAllLoaded
+                val shouldAutoSelect = !autoPlayHandledForSession && !resolvedAutoPlayTarget && !sourceRaceInProgress && isAllLoaded
                 val selectedAutoPlayStream = if (earlyBingeGroupMatch != null) {
                     earlyBingeGroupMatch
                 } else if (!shouldAutoSelect) {
@@ -646,7 +650,18 @@ class StreamScreenViewModel @Inject constructor(
                         candidates.add(candidate)
                         remaining.remove(candidate)
                     }
-                    com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(candidates)
+                    sourceRaceInProgress = true
+                    try {
+                    val httpCandidates = candidates.filter { !it.isTorrent() }
+                    val httpWinner = if (httpCandidates.isEmpty()) null else com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(httpCandidates)
+                    httpWinner ?: if (candidates.any { it.isTorrent() }) {
+                        try {
+                            torrentService.chooseReadySource(candidates, if (season != null) 2_000_000_000L else 7_000_000_000L)
+                                ?: com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(candidates.filter { it.isTorrent() }).firstOrNull()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (_: Exception) { com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(candidates.filter { it.isTorrent() }).firstOrNull() }
+                    } else null
+                    } finally { sourceRaceInProgress = false }
                 }
                 if (selectedAutoPlayStream != null) {
                     resolvedAutoPlayTarget = true

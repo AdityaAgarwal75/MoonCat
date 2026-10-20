@@ -17,6 +17,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import com.nuvio.tv.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 data class MooncatChannel(val name: String, val language: String, val url: String, val logo: Int, val headers: Map<String, String> = emptyMap())
 val mooncatNewsChannels = listOf(
@@ -27,7 +34,7 @@ val mooncatNewsChannels = listOf(
     MooncatChannel("Zee News", "Hindi", "https://dknttpxmr0dwf.cloudfront.net/index_57.m3u8", R.drawable.channel_zeenews, emptyMap()),
     MooncatChannel("News18 India", "Hindi", "https://n18syndication.akamaized.net/bpk-tv/News18_India_NW18_MOB/output01/master.m3u8", R.drawable.channel_news18india, emptyMap()),
     MooncatChannel("TV9 Bharatvarsh", "Hindi", "https://dyjmyiv3bp2ez.cloudfront.net/pub-iotv9hinjzgtpe/liveabr/playlist.m3u8", R.drawable.channel_tv9bharatvarsh, emptyMap()),
-    MooncatChannel("News24", "Hindi", "https://vidcdn.vidgyor.com/news24-origin/liveabr/playlist.m3u8", R.drawable.channel_news24, emptyMap()),
+    MooncatChannel("News24", "Hindi", "https://news24cdn.vidgyor.com/news24-origin/liveabr/playlist.m3u8", R.drawable.channel_news24, emptyMap()),
     MooncatChannel("Times Now Navbharat", "Hindi", "https://raw.githubusercontent.com/amazeyourself/adaptive-streams/refs/heads/main/streams/in/YuppTV/TimesNowNavbharat.m3u8", R.drawable.channel_timesnownavbharat, emptyMap()),
     MooncatChannel("Bharat24", "Hindi", "https://cdn.ottlive.co.in/bharat24/index.m3u8", R.drawable.channel_bharat24, emptyMap()),
     MooncatChannel("Good News Today", "Hindi", "https://aajtaklive.vgcdn.net/v1/master/611d79b11b77e2f571934fd80ca1413453772ac7/3196cced-ce29-4219-9809-f07ccdaa02b9/vglive-sk-848805/master.m3u8", R.drawable.channel_goodnewstoday, emptyMap()),
@@ -45,6 +52,30 @@ val mooncatNewsChannels = listOf(
 @Composable
 fun MooncatNewsScreen(onPlay: (MooncatChannel) -> Unit = {}) {
     var filter by rememberSaveable { mutableStateOf("All") }
+    var opening by remember { mutableStateOf<String?>(null) }
+    var failed by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val client = remember { OkHttpClient.Builder().callTimeout(6, TimeUnit.SECONDS).build() }
+    fun openChannel(channel: MooncatChannel) {
+        if (opening != null) return
+        opening = channel.name
+        failed = null
+        scope.launch {
+            val available = withContext(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder().url(channel.url).header("User-Agent", "Mozilla/5.0").apply {
+                        channel.headers.forEach { (key, value) -> header(key, value) }
+                    }.build()
+                    client.newCall(request).execute().use { response ->
+                        response.isSuccessful && response.body?.source()?.readUtf8Line()?.trim() == "#EXTM3U"
+                    }
+                } catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { false }
+            }
+            opening = null
+            if (available) onPlay(channel) else failed = channel.name
+        }
+    }
     Column(Modifier.fillMaxSize().background(Color(0xFF080B14)).padding(horizontal = 32.dp)) {
         Text("Live News", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 24.dp))
         Text("20 Indian broadcasters  ·  Watch inside MoonCat", color = Color(0xFFA8B0C4), modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
@@ -53,10 +84,13 @@ fun MooncatNewsScreen(onPlay: (MooncatChannel) -> Unit = {}) {
                 Button(onClick = { filter = language }) { Text(if (filter == language) "● $language" else language) }
             }
         }
+        if (opening != null) Text("Connecting to $opening…", color = Color(0xFFB8B2FF), modifier = Modifier.padding(bottom = 8.dp))
+        if (failed != null) Text("$failed is unavailable right now. Select it to retry, or choose another channel.",
+            color = Color(0xFFFF9BA7), modifier = Modifier.padding(bottom = 8.dp))
         LazyVerticalGrid(columns = GridCells.Fixed(4), contentPadding = PaddingValues(vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
             items(mooncatNewsChannels.filter { filter == "All" || it.language == filter || (filter == "Regional" && it.language !in listOf("Hindi", "English")) }, key = { it.name }) { channel ->
-                Card(onClick = { onPlay(channel) }, modifier = Modifier.fillMaxWidth()) {
+                Card(onClick = { openChannel(channel) }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.fillMaxWidth().background(Color(0xFF151B2A))) {
                         Image(painterResource(channel.logo), channel.name,
                             Modifier.fillMaxWidth().height(92.dp).background(Color(0xFFF4F4F6)).padding(16.dp), contentScale = ContentScale.Fit)

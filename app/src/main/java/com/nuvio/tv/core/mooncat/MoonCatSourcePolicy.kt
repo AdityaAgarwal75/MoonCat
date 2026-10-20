@@ -31,6 +31,13 @@ object MoonCatSourcePolicy {
         return !excluded.containsMatchIn(text(stream)) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
 
+    fun reusableRelease(name: String, filename: String?, size: Long?, preferredLanguage: String, maxFileBytes: Long): Boolean {
+        val cached = Stream(name = name, title = filename, description = null, url = null, ytId = null,
+            infoHash = null, fileIdx = null, externalUrl = null, behaviorHints = null, addonName = "Cached", addonLogo = null)
+        return suitable(cached, maxFileBytes) && (size == null || size in 1..maxFileBytes) &&
+            forPreferredLanguage(listOf(cached), preferredLanguage).isNotEmpty()
+    }
+
     /** Explicit audio labels outrank unknown audio; subtitles never establish a dub. */
     fun forPreferredLanguage(streams: List<Stream>, language: String): List<Stream> {
         val preferred = normalizeLanguage(language) ?: "hi"

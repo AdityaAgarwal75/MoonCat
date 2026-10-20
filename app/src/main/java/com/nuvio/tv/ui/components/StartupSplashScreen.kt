@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -102,14 +103,9 @@ fun StartupSplashScreen(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-
-            Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxl))
-            LoadingIndicator(modifier = Modifier.size(NuvioTheme.spacing.xxxl))
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            LoadingIndicator(modifier = Modifier.align(Alignment.TopCenter)
+                .offset(y = maxHeight * 0.82f - 14.dp).size(28.dp))
         }
     }
 }

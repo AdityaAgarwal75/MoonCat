@@ -58,4 +58,9 @@ class MoonCatSourcePolicyTest {
         val low = source("1080p Hindi 👤 2"); val high = source("1080p Hindi 👤 240")
         assertEquals(high, MoonCatSourcePolicy.rank(listOf(low, high)).first())
     }
+    @Test fun `old cached camera and wrong-language releases cannot bypass the new policy`() {
+        assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HDCAM.Hindi.mkv", 5_000_000_000L, "hi", 7_000_000_000L))
+        assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.Japanese.WEB-DL.mkv", null, "hi", 7_000_000_000L))
+        assertTrue(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HIN.ENG.WEB-DL.mkv", 2_000_000_000L, "hi", 7_000_000_000L))
+    }
 }

@@ -1156,7 +1156,7 @@ private fun PlaybackNavHost(
 
         composable(Screen.News.route) {
             com.nuvio.tv.ui.screens.news.MooncatNewsScreen { channel ->
-                navController.navigate(Screen.Player.createRoute(streamUrl = channel.url, title = channel.name, headers = channel.headers, contentType = "live"))
+                navController.navigate(Screen.Player.createRoute(streamUrl = channel.url, title = channel.name, headers = channel.headers + ("User-Agent" to "Mozilla/5.0"), contentType = "live"))
             }
         }
         composable(Screen.Studios.route) {
