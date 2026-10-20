@@ -875,7 +875,7 @@ private fun ProfileSelectionBackground(
             null -> {
                 androidx.compose.foundation.Image(
                     painter = androidx.compose.ui.res.painterResource(R.drawable.mooncat_profiles_v102),
-                    contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
+                    contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
             }
         }

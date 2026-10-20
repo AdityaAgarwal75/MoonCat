@@ -5,10 +5,12 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("""(?i)(2160p|4320p|480p|360p|240p|\b4k\b|\b8k\b|remux|hd[ ._-]*cam|cam[ ._-]*rip|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
+    private val excluded = Regex("""(?i)(2160p|4320p|480p|360p|240p|\b4k\b|\b8k\b|remux|hd[ ._-]*cam|cam[ ._-]*rip|hd[ ._-]*(?:ts|tc)|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
-        stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename).joinToString(" ")
+        stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename,
+        stream.clientResolve?.stream?.raw?.torrentName, stream.clientResolve?.stream?.raw?.filename,
+        stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
     fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize
         ?: stream.clientResolve?.stream?.raw?.size
@@ -60,7 +62,7 @@ object MoonCatSourcePolicy {
         // A provider's structured audio list and filename are stronger than subtitle flags.
         val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
         val audioText = text(stream).lineSequence().map { line ->
-            line.replace(Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]\s*[^\n|;]+"""), " ")
+            line.replace(Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+"""), " ")
                 .replace(Regex("""(?i)\b(?:hindi|hin|english|eng|japanese|jpn)\s+(?:subtitles?|subs?|subbed)\b"""), " ")
         }.joinToString(" ")
         return buildSet {
@@ -82,5 +84,13 @@ object MoonCatSourcePolicy {
         }
     }
 
-    fun rank(streams: List<Stream>): List<Stream> = streams.filter { suitable(it) }.sortedBy(::qualityTier)
+    /** Seed counts are availability hints, never measured bandwidth. */
+    fun advertisedSeeders(stream: Stream): Int {
+        val content = text(stream)
+        val afterIcon = Regex("""(?:👤|👥|🌱)\s*(\d[\d,]*)""").find(content)?.groupValues?.get(1)
+        val named = Regex("""(?i)\b(?:seeders?|seeds?)\s*[:=]?\s*(\d[\d,]*)""").find(content)?.groupValues?.get(1)
+        return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
+    }
+
+    fun rank(streams: List<Stream>): List<Stream> = streams.filter { suitable(it) }.sortedWith(compareBy<Stream>(::qualityTier).thenByDescending(::advertisedSeeders))
 }

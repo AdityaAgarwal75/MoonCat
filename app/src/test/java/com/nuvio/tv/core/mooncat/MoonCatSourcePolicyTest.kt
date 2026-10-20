@@ -54,4 +54,8 @@ class MoonCatSourcePolicyTest {
         val en = source("English 720p"); val ja = source("Japanese 1080p")
         assertEquals(listOf(en), MoonCatSourcePolicy.forPreferredLanguage(listOf(ja,en), "hi"))
     }
+    @Test fun `torrent availability breaks ties within a quality tier`() {
+        val low = source("1080p Hindi 👤 2"); val high = source("1080p Hindi 👤 240")
+        assertEquals(high, MoonCatSourcePolicy.rank(listOf(low, high)).first())
+    }
 }
