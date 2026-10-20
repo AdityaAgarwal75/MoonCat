@@ -1,6 +1,8 @@
 package com.nuvio.tv.ui.screens.discovery
 
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.SemanticsActions
+import android.view.KeyEvent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -32,7 +34,9 @@ class MooncatDiscoveryUiTest {
             throw failure
         }
         screenshot("studios")
-        ui.onNodeWithContentDescription("Marvel").performClick()
+        ui.onNodeWithContentDescription("Marvel").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        ui.waitUntil(5000) { ui.onAllNodesWithText("● All titles").fetchSemanticsNodes().isNotEmpty() }
         ui.onNodeWithText("● All titles").assertExists()
         ui.onNodeWithText("Movies").assertExists()
         ui.onNodeWithText("Series").assertExists()
@@ -43,7 +47,9 @@ class MooncatDiscoveryUiTest {
         ui.setContent { NuvioTheme { MooncatNewsScreen {} } }
         ui.onNodeWithContentDescription("DD News").assertExists()
         screenshot("news")
-        ui.onAllNodesWithText("English").onFirst().performClick()
+        ui.onAllNodesWithText("English").onFirst().performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_DPAD_CENTER)
+        ui.waitUntil(5000) { ui.onAllNodesWithContentDescription("DD News").fetchSemanticsNodes().isEmpty() }
         ui.onNodeWithContentDescription("India Today").assertExists()
         ui.onNodeWithContentDescription("DD News").assertDoesNotExist()
         screenshot("news-english")
