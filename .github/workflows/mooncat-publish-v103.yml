@@ -1,0 +1,59 @@
+name: Publish verified MoonCat v1.0.3 candidates
+
+on:
+  push:
+    branches: [build/mooncat-v102-android-verify]
+    paths: [.github/workflows/mooncat-publish-v103.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve signed release files and checksums
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for file in MoonCat-v1.0.3-FireTV.apk MoonCat-v1.0.3-Mobile.apk MoonCat-v1.0.3-SHA256SUMS; do
+            curl -fsSL --retry 3 --max-time 160 "https://mooncat.15-252-234-187.sslip.io/$file" -o "dist/$file"
+          done
+          cd dist
+          sha256sum --check MoonCat-v1.0.3-SHA256SUMS
+
+      - name: Verify APK signatures, packages and versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          fi
+          "$SDKMANAGER" "build-tools;36.0.0"
+          TOOL="${ANDROID_HOME}/build-tools/36.0.0"
+          for apk in dist/*.apk; do
+            "$TOOL/apksigner" verify --verbose "$apk"
+            certificate="$("$TOOL/apksigner" verify --print-certs "$apk" | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)"
+            test "$certificate" = "6341008335cc94f1dba060680dbedafd59ba5d5ef8017d09ff8757cccdd0ec0c"
+          done
+          "$TOOL/aapt" dump badging dist/MoonCat-v1.0.3-FireTV.apk | grep -F "name='dev.mooncat.tv' versionCode='10004'"
+          "$TOOL/aapt" dump badging dist/MoonCat-v1.0.3-Mobile.apk | grep -F "name='dev.mooncat.mobile' versionCode='10004'"
+          echo "Both original-certificate-signed APKs verified."
+
+      - name: Create GitHub release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "v1.0.3-rc1" >/dev/null 2>&1; then
+            gh release upload "v1.0.3-rc1" dist/* --clobber
+          else
+            gh release create "v1.0.3-rc1" dist/* \
+              --title "MoonCat v1.0.3 RC1 — Fire TV and Android" \
+              --notes "Fire TV: updated MoonCat logo, splash, Studios collections, News route fix and Hindi catalogues. Android: separate touch-first mobile beta. CI compilation, package IDs, checksums and signing certificate verified. Actual device playback and TV remote testing still required; mobile movie-source playback not yet supported." \
+              --prerelease --target "$GITHUB_SHA"
+          fi
