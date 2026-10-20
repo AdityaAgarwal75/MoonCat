@@ -27,7 +27,7 @@ class ProfileManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
-        const val MAX_PROFILES = 6
+        const val MAX_PROFILES = 1
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

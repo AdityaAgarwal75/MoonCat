@@ -109,6 +109,49 @@ class TorrentService @Inject constructor(
         }
     }
 
+    /** Race small, verified preloads without disturbing an existing playing stream. */
+    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
+        startMutex.withLock {
+            if (_state.value is TorrentState.Streaming || _state.value is TorrentState.Connecting) return@withLock null
+            val activeEngine = ensureEngine()
+            val previous = knownTorrentIds.toSet()
+            val routes = java.util.Collections.synchronizedList(mutableListOf<NuvioStream>())
+            val added = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+            var winner: com.nuvio.tv.domain.model.Stream? = null
+            try {
+                winner = com.nuvio.tv.core.mooncat.MoonCatTorrentRace.choose(candidates) { candidate ->
+                    val hash = candidate.getEffectiveInfoHash() ?: return@choose false
+                    val id = activeEngine.addMagnet(buildMagnetUri(hash, (DefaultTorrentTrackers + candidate.sources.orEmpty()).distinct()))
+                    added.add(id)
+                    val route = activeEngine.prepareStream(id, candidate.getEffectiveFileIdx(), candidate.behaviorHints?.filename, 65536L)
+                    routes.add(route)
+                    if (route.fileSize <= 0L || route.fileSize > maxFileBytes) return@choose false
+                    // The engine verifies that this many media bytes are actually buffered.
+                    activeEngine.preloadStream(route, 65536L)
+                    true
+                }
+                winner
+            } finally {
+                val keep = winner?.getEffectiveInfoHash()?.let(::canonicalInfoHash)
+                withContext(NonCancellable) {
+                    kotlinx.coroutines.withTimeoutOrNull(1500L) {
+                        kotlinx.coroutines.coroutineScope {
+                            added.toList().forEach { id -> launch {
+                                routes.toList().filter { it.torrentId == id }.forEach { route ->
+                                    runCatching { activeEngine.stopStream(route.id) }
+                                }
+                                if (id != keep && id !in previous) runCatching { activeEngine.removeTorrent(id) }
+                            } }
+
+                        }
+                    }
+                }
+                // Keep only the winning torrent's metadata/cache for the actual player startup.
+                if (keep != null) knownTorrentIds.add(keep)
+            }
+        }
+    }
+
     fun stopStream() {
         scheduleStop(shutdownEngine = false)
     }

@@ -29,12 +29,38 @@ class MoonCatSourcePolicyTest {
         val english = source("English 1080p")
         val unknown = source("1080p unlabelled")
         assertEquals(listOf(hindi), MoonCatSourcePolicy.forPreferredLanguage(listOf(english, unknown, hindi), "hi"))
-        assertEquals(listOf(unknown), MoonCatSourcePolicy.forPreferredLanguage(listOf(english, unknown), "hi"))
-        assertTrue(MoonCatSourcePolicy.forPreferredLanguage(listOf(english), "hi").isEmpty())
+        assertEquals(listOf(english), MoonCatSourcePolicy.forPreferredLanguage(listOf(english, unknown), "hi"))
+        assertEquals(listOf(english), MoonCatSourcePolicy.forPreferredLanguage(listOf(english), "hi"))
     }
     @Test fun `decimal and binary size units differ`() {
         assertEquals(7_000_000_000L, MoonCatSourcePolicy.sizeBytes(source("7 GB")))
         assertEquals(7_516_192_768L, MoonCatSourcePolicy.sizeBytes(source("7 GiB")))
         assertEquals(700_000_000L, MoonCatSourcePolicy.sizeBytes(source("700 MB")))
+    }
+    @Test fun `subtitle labels cannot establish Hindi dubbed audio`() {
+        assertFalse(MoonCatSourcePolicy.advertisesAudio(source("English 1080p | Subtitles: Hindi"), "hi"))
+        assertFalse(MoonCatSourcePolicy.advertisesAudio(source("Japanese 1080p Hindi Subs"), "hi"))
+        assertTrue(MoonCatSourcePolicy.advertisesAudio(source("Film.1080p.HIN-ENG.WEB-DL"), "hi"))
+        assertTrue(MoonCatSourcePolicy.advertisesAudio(source("Film [HI + EN] BluRay"), "en"))
+    }
+    @Test fun `large camera releases remain excluded regardless of claimed HD resolution`() {
+        listOf("HD-CAM 1080p 5 GB", "HDTS Hindi 4 GB", "HDTC 5 GB", "TS 1080p", "TC Hindi", "PreDVD 1080p").forEach {
+            assertFalse(it, MoonCatSourcePolicy.suitable(source(it)))
+        }
+        assertTrue(MoonCatSourcePolicy.suitable(source("BluRay 1080p Hindi English 5 GB")))
+        assertTrue(MoonCatSourcePolicy.suitable(source("WEBRip 1080p 2 GB")))
+    }
+    @Test fun `English dub beats Japanese original when Hindi is absent`() {
+        val en = source("English 720p"); val ja = source("Japanese 1080p")
+        assertEquals(listOf(en), MoonCatSourcePolicy.forPreferredLanguage(listOf(ja,en), "hi"))
+    }
+    @Test fun `torrent availability breaks ties within a quality tier`() {
+        val low = source("1080p Hindi 👤 2"); val high = source("1080p Hindi 👤 240")
+        assertEquals(high, MoonCatSourcePolicy.rank(listOf(low, high)).first())
+    }
+    @Test fun `old cached camera and wrong-language releases cannot bypass the new policy`() {
+        assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HDCAM.Hindi.mkv", 5_000_000_000L, "hi", 7_000_000_000L))
+        assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.Japanese.WEB-DL.mkv", null, "hi", 7_000_000_000L))
+        assertTrue(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HIN.ENG.WEB-DL.mkv", 2_000_000_000L, "hi", 7_000_000_000L))
     }
 }

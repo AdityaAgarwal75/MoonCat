@@ -3,7 +3,7 @@
 
     <style name="Theme.MyApplication.Launcher" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/app_logo_mark</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/mooncat_mark_v102</item>
         <item name="postSplashScreenTheme">@style/Theme.MyApplication</item>
     </style>
 </resources>

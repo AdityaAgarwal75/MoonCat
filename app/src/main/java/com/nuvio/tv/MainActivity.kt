@@ -1141,6 +1141,9 @@ open class MainActivity : ComponentActivity() {
                     }
 
                     val updateViewModel: UpdateViewModel = hiltViewModel(this@MainActivity)
+                    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                        updateViewModel.checkForUpdates(force = false, showNoUpdateFeedback = false)
+                    }
                     val updateState by updateViewModel.uiState.collectAsState()
                     val updateBannerState = updateState.copy(
                         showBanner = updateState.showBanner && currentRoute?.startsWith("player/") != true

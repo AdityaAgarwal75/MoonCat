@@ -30,7 +30,9 @@ object MoonCatSourceRace {
     private val credentialClient = client.newBuilder().followRedirects(false).build()
 
     suspend fun choose(candidates: List<Stream>): Stream? = coroutineScope {
-        val ranked = MoonCatSourcePolicy.rank(candidates).take(MAX_CANDIDATES)
+        val ranked = MoonCatSourcePolicy.rank(candidates).distinctBy {
+            it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}"
+        }.take(MAX_CANDIDATES)
         val results = Channel<Pair<Stream, Sample>?>(Channel.UNLIMITED)
         val jobs = ranked.mapNotNull { stream ->
             val url = stream.getStreamUrl()?.takeIf {
@@ -53,8 +55,7 @@ object MoonCatSourceRace {
                     }
                 }
             }
-            val bestTier = samples.minOfOrNull { MoonCatSourcePolicy.qualityTier(it.first) }
-            samples.filter { MoonCatSourcePolicy.qualityTier(it.first) == bestTier }
+            samples
                 .maxWithOrNull(compareBy<Pair<Stream, Sample>> { it.second.bytesPerSecond }
                     .thenBy { -it.second.elapsedNanos })?.first ?: ranked.firstOrNull { it.getStreamUrl() == null }
         } finally {

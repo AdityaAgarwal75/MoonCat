@@ -13,7 +13,7 @@ internal object AbiSelector {
     )
 
     fun chooseBestApkAsset(assets: List<GitHubAssetDto>): GitHubAssetDto? {
-        val apkAssets = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+        val apkAssets = assets.filter { it.name.endsWith(".apk", ignoreCase = true) && !it.name.contains("mobile", ignoreCase = true) }
         if (apkAssets.isEmpty()) return null
         if (apkAssets.size == 1) return apkAssets.first()
 
