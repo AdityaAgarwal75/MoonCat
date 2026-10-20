@@ -1,0 +1,121 @@
+name: MoonCat TV + Mobile Build and Smoke Tests
+
+on:
+  push:
+    branches: [build/mooncat-v102-android-verify]
+    paths: [.github/workflows/mooncat-verify-apks.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk-builds:
+    name: Compile both APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - name: Set up Android
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Validate Studios, News and navigation resources
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,pathlib,re
+          p=pathlib.Path('mobile/src/main/assets/studios.json')
+          groups=json.loads(p.read_text())
+          assert len(groups)>=10, "Insufficient studio/franchise groups"
+          ids=[i['imdb'] for g in groups for i in g['works']]
+          assert len(ids)>=40 and all(re.fullmatch(r'tt\d{7,9}',i) for i in ids)
+          nav=pathlib.Path('app/src/main/java/com/nuvio/tv/ui/navigation/NuvioNavHost.kt').read_text()
+          ui=pathlib.Path('app/src/main/java/com/nuvio/tv/MainActivity.kt').read_text()
+          news=pathlib.Path('app/src/main/java/com/nuvio/tv/ui/screens/news/MooncatNewsScreen.kt').read_text()
+          assert 'Screen.Studios.route' in nav and 'Screen.Studios.route' in ui
+          assert 'Screen.News.route' in nav
+          assert 'MooncatNewsScreen { channel ->' in nav
+          assert 'ExoPlayer.Builder(' not in news, "News must not instantiate its own player"
+          assert 'Screen.Player.createRoute' in nav
+          for asset in ['mooncat_splash_v102.webp','mooncat_mark_v102.webp','mooncat_word_v102.webp']:
+              assert (pathlib.Path('app/src/main/res/drawable')/asset).exists()
+          print("Validated",len(groups),"collections and",len(ids),"studio titles")
+          PY
+      - name: Assemble both Android apps
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleFullDebug :mobile:assembleDebug --no-daemon --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+      - name: Verify package IDs and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOL="$ANDROID_HOME/build-tools/36.0.0"
+          TV="$(find app/build/outputs/apk/full/debug -name '*.apk' -print -quit)"
+          MOBILE="$(find mobile/build/outputs/apk/debug -name '*.apk' -print -quit)"
+          test -s "$TV"; test -s "$MOBILE"
+          "$TOOL/apksigner" verify "$TV"
+          "$TOOL/apksigner" verify "$MOBILE"
+          "$TOOL/aapt" dump badging "$TV" | grep "package: name='dev.mooncat.tv'"
+          "$TOOL/aapt" dump badging "$MOBILE" | grep "package: name='dev.mooncat.mobile'"
+          sha256sum "$TV" "$MOBILE"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: MoonCat-TV-v102-debug
+          path: app/build/outputs/apk/full/debug/*.apk
+          retention-days: 21
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: MoonCat-Mobile-v102-debug
+          path: mobile/build/outputs/apk/debug/*.apk
+          retention-days: 21
+
+  mobile-smoke:
+    name: Android mobile emulator checks
+    needs: apk-builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: MoonCat-Mobile-v102-debug
+          path: /tmp/mooncat-mobile-apk
+      - name: Check Home / Studios / News on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            adb install -r "$(find /tmp/mooncat-mobile-apk -name '*.apk' -print -quit)"
+            adb logcat -c
+            adb shell am start -n dev.mooncat.mobile/.MainActivity
+            sleep 5
+            adb shell uiautomator dump /sdcard/mooncat.xml >/dev/null
+            adb shell cat /sdcard/mooncat.xml | grep -q "Studios"
+            adb shell cat /sdcard/mooncat.xml | grep -q "News"
+            SIZE="$(adb shell wm size | grep Physical | awk '{print $3}' | tr -d '\r')"
+            W="${SIZE%x*}"; H="${SIZE#*x}"
+            DENSITY="$(adb shell wm density | grep Physical | awk '{print $3}' | tr -d '\r')"
+            NAVY=$((H - DENSITY * 35 / 160))
+            adb shell input tap $((W/2)) "$NAVY"
+            sleep 2
+            adb shell uiautomator dump /sdcard/mooncat.xml >/dev/null
+            adb shell cat /sdcard/mooncat.xml | grep -q "Studios"
+            adb shell input tap $((W*5/6)) "$NAVY"
+            sleep 3
+            adb shell uiautomator dump /sdcard/mooncat.xml >/dev/null
+            adb shell cat /sdcard/mooncat.xml | grep -q "Live News"
+            if adb logcat -d -v brief | grep -E 'FATAL EXCEPTION.*dev\.mooncat\.mobile|Process: dev\.mooncat\.mobile'; then
+              echo "Mobile app crashed"; exit 1
+            fi
+            echo "Mobile smoke tests passed"
