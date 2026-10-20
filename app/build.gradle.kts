@@ -82,6 +82,7 @@ fun truthy(value: String?): Boolean {
 
 val buildingAppBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
 val useDebugReleaseSigning = env("CI_USE_DEBUG_SIGNING").equals("true", ignoreCase = true)
+val useUnsignedRelease = env("CI_UNSIGNED_RELEASE").equals("true", ignoreCase = true)
 val useLocalFfmpegDecoder = truthy(
     providers.gradleProperty("useLocalFfmpegDecoder").orNull
         ?: env("USE_LOCAL_FFMPEG_DECODER")
@@ -195,7 +196,9 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // GitHub-hosted CI uses its own debug key; installed releases retain
+            // MoonCat's original signing identity.
+            signingConfig = if (useDebugReleaseSigning) signingConfigs.getByName("debug") else signingConfigs.getByName("release")
             isDebuggable = parseBooleanProperty(providers.gradleProperty("debuggable").orNull)
             isMinifyEnabled = false
 
@@ -228,10 +231,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (useDebugReleaseSigning) {
-                signingConfigs.getByName("debug")
-            } else {
-                signingConfigs.getByName("release")
+            signingConfig = when {
+                useUnsignedRelease -> null // Sign on the trusted VPS after GitHub compiles the unsigned release.
+                useDebugReleaseSigning -> signingConfigs.getByName("debug")
+                else -> signingConfigs.getByName("release")
             }
 
             buildConfigField("boolean", "IS_DEBUG_BUILD", "false")

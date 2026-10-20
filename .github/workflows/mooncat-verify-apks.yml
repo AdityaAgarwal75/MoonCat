@@ -13,6 +13,8 @@ jobs:
   apk-builds:
     name: Compile both APKs
     runs-on: ubuntu-latest
+    env:
+      CI_USE_DEBUG_SIGNING: "true"
     timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
