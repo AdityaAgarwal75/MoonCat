@@ -37,7 +37,7 @@ class MooncatDiscoveryUiTest {
         ui.setContent { NuvioTheme { MooncatNewsScreen {} } }
         ui.onNodeWithContentDescription("DD News").assertExists()
         screenshot("news")
-        ui.onNodeWithText("English").performClick()
+        ui.onAllNodesWithText("English").onFirst().performClick()
         ui.onNodeWithContentDescription("India Today").assertExists()
         ui.onNodeWithContentDescription("DD News").assertDoesNotExist()
         screenshot("news-english")
