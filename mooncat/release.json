@@ -1,0 +1,10 @@
+{
+  "tag": "v1.0.5-test.1",
+  "sha256": "201e3b999e8d10a448d0c8f78acbdae1dee64b6f9f69e59cb58bb48e2f23733c",
+  "parts": [
+    "mooncat/apk-parts/v1.0.5-test.1/part-00",
+    "mooncat/apk-parts/v1.0.5-test.1/part-01",
+    "mooncat/apk-parts/v1.0.5-test.1/part-02",
+    "mooncat/apk-parts/v1.0.5-test.1/part-03"
+  ]
+}
