@@ -1,0 +1,74 @@
+name: MoonCat Android CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mooncat-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Build and test Android apps
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      DOVI_NATIVE_ENABLED: "false"
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Verify wrapper
+        run: chmod +x gradlew
+
+      - name: Test TV app
+        run: ./gradlew :app:testFullDebugUnitTest --no-daemon --max-workers=2 --console=plain
+
+      - name: Build TV debug APK
+        run: ./gradlew :app:assembleFullDebug --no-daemon --max-workers=2 --console=plain
+
+      - name: Build mobile debug APK when module is available
+        run: |
+          if grep -Fq 'include(":mobile")' settings.gradle.kts && test -f mobile/build.gradle.kts; then
+            ./gradlew :mobile:assembleDebug --no-daemon --max-workers=2 --console=plain
+          else
+            echo "Mobile module not yet merged; skipping mobile APK."
+          fi
+
+      - name: Upload TV APK for testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-TV-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload mobile APK for testing (if present)
+        if: hashFiles('mobile/build/outputs/apk/debug/*.apk') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-Mobile-debug-${{ github.run_number }}
+          path: mobile/build/outputs/apk/debug/*.apk
+          retention-days: 14
