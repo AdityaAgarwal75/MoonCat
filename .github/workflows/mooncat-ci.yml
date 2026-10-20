@@ -50,8 +50,16 @@ jobs:
       - name: Verify wrapper
         run: chmod +x gradlew
 
+      - name: Set deterministic non-secret OAuth test fixtures
+        run: |
+          printf 'TRAKT_CLIENT_ID=mooncat-ci-fixture\nTRAKT_CLIENT_SECRET=mooncat-ci-fixture\n' > local.properties
+
       - name: Test TV app
         run: ./gradlew :app:testFullDebugUnitTest --no-daemon --max-workers=2 --console=plain
+
+      - name: Remove test fixtures before packaging
+        if: ${{ !cancelled() }}
+        run: rm -f local.properties
 
       - name: Upload test results if tests fail
         if: ${{ failure() }}

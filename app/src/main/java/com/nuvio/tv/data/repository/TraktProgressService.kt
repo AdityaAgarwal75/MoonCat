@@ -1100,6 +1100,8 @@ class TraktProgressService @Inject constructor(
             val snapshot = try {
                 progressDeferred.await()
             } catch (e: Exception) {
+                // Preserve coroutine cancellation; a cancelled refresh is not a network error.
+                if (e is java.util.concurrent.CancellationException) throw e
                 Log.w(TAG, "fetchAllProgressSnapshot failed, keeping existing snapshot", e)
                 null
             }
