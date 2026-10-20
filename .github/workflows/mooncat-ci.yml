@@ -18,10 +18,9 @@ jobs:
   android:
     name: Build and test Android apps
     runs-on: ubuntu-latest
-    env:
-      CI_USE_DEBUG_SIGNING: "true"
     timeout-minutes: 65
     env:
+      CI_USE_DEBUG_SIGNING: "true"
       DOVI_NATIVE_ENABLED: "false"
       GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8"
 
