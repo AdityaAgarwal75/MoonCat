@@ -1155,14 +1155,7 @@ private fun PlaybackNavHost(
         }
 
         composable(Screen.News.route) {
-            com.nuvio.tv.ui.screens.news.MooncatNewsScreen { channel ->
-                navController.navigate(Screen.Player.createRoute(streamUrl = channel.url, title = channel.name, headers = channel.headers + ("User-Agent" to "Mozilla/5.0"), contentType = "live"))
-            }
-        }
-        composable(Screen.Studios.route) {
-            com.nuvio.tv.ui.screens.collection.MooncatStudiosScreen { work ->
-                navController.navigate(Screen.Detail.createRoute(itemId = work.imdb, itemType = work.type))
-            }
+            com.nuvio.tv.ui.screens.news.MooncatNewsScreen()
         }
 
         composable(Screen.Search.route) { backStackEntry ->

@@ -208,29 +208,11 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     var requestedAudioLanguage by remember { mutableStateOf<String?>(null) }
-    var automaticAudioSearch by remember { mutableStateOf(false) }
-    val preferredAudioLanguage by viewModel.preferredAudioLanguage.collectAsState(initial = null)
-    var audioPreferenceChecked by remember(uiState.contentName, uiState.currentVideoId) { mutableStateOf(false) }
-    LaunchedEffect(preferredAudioLanguage, uiState.audioTracks, uiState.isBuffering, effectiveAutoplayEnabled) {
-        if (!audioPreferenceChecked && effectiveAutoplayEnabled && preferredAudioLanguage == "hi" &&
-            !uiState.isServerStream && !uiState.isBuffering && uiState.audioTracks.isNotEmpty()) {
-            audioPreferenceChecked = true
-            if (AudioLanguageChoices.choices(uiState.audioTracks).none { it.language == "hi" }) {
-                automaticAudioSearch = true
-                requestedAudioLanguage = "hi"
-            }
-        }
-    }
     MooncatLanguageSourceSearch(
         language = requestedAudioLanguage,
-        automatic = automaticAudioSearch,
         state = uiState,
         onEvent = viewModel::onEvent,
-        onFinished = {
-            if (automaticAudioSearch) viewModel.onEvent(PlayerEvent.OnDismissSourcesPanel)
-            requestedAudioLanguage = null
-            automaticAudioSearch = false
-        }
+        onFinished = { requestedAudioLanguage = null }
     )
 
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -1863,7 +1845,7 @@ fun PlayerScreen(
                 viewModel.onEvent(PlayerEvent.OnSetCenterMixLevelDb(it))
             },
             onDismiss = { viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay) },
-            onLanguageSearch = { automaticAudioSearch = false; requestedAudioLanguage = it },
+            onLanguageSearch = { requestedAudioLanguage = it },
             onFindOtherLanguage = {
                 viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay)
                 viewModel.onEvent(PlayerEvent.OnShowSourcesPanel)

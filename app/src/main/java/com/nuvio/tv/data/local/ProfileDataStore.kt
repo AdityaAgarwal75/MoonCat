@@ -47,14 +47,14 @@ class ProfileDataStore @Inject constructor(
     val profilesList: Flow<List<UserProfile>> = dataStore.data.map { prefs ->
         val json = prefs[profilesJsonKey]
         if (json != null) {
-            parseProfiles(json).filter { it.id == 1 }.map { it.copy(name = "Family") }
+            parseProfiles(json)
         } else {
             defaultProfiles()
         }
     }
 
     val activeProfileId: Flow<Int> = dataStore.data.map { prefs ->
-        1 // Single household profile; old profile data stays on disk.
+        prefs[activeProfileIdKey] ?: 1
     }
 
     val hasEverSelectedProfile: Flow<Boolean> = dataStore.data.map { prefs ->
@@ -142,11 +142,14 @@ class ProfileDataStore @Inject constructor(
 
     private fun defaultPrimaryProfile() = UserProfile(
         id = 1,
-        name = "Family",
+        name = "Family · Hindi",
         avatarColorHex = "#C8A96B"
     )
 
-    private fun defaultProfiles() = listOf(defaultPrimaryProfile())
+    private fun defaultProfiles() = listOf(
+        defaultPrimaryProfile(),
+        UserProfile(id = 2, name = "Personal · English", avatarColorHex = "#8E9DCC")
+    )
 
     private fun parseProfiles(json: String?): List<UserProfile> {
         if (json.isNullOrBlank()) return defaultProfiles()

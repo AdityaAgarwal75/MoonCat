@@ -1308,7 +1308,6 @@ private fun MetaDetailsContent(
         meta.videos.firstOrNull { it.id == defaultVideoId && it.available != false }
     }
     val nextEpisode = remember(episodesForSeason) { episodesForSeason.firstOrNull() }
-    val latestEpisode = remember(meta.videos) { latestReleasedEpisode(meta.videos) }
     val heroVideo = remember(meta, nextToWatch, episodesForSeason) {
         resolveHeroPlaybackVideo(
             meta = meta,
@@ -2471,10 +2470,6 @@ private fun MetaDetailsContent(
                         nextEpisode = nextEpisode,
                         nextToWatch = nextToWatch,
                         onPlayClick = { if (shufflePoolEmpty) showRandomEpisodeOverlay = true else heroPlayClick() },
-                        latestEpisodeLabel = latestEpisode?.takeIf { isSeries && canPlayEpisode(it) }?.let {
-                            stringResource(R.string.mooncat_play_latest_episode, it.season ?: 0, it.episode ?: 0)
-                        },
-                        onPlayLatestEpisode = { latestEpisode?.let(onEpisodeClick) },
                         isPlayEnabled = shufflePoolEmpty || isPlayEnabled,
                         onPlayLongPress = if (!shufflePoolEmpty && isPlayEnabled && (showManualPlayOption || nextToWatch?.isResume == true)) {
                             { showHeroPlayOptionsDialog = true }

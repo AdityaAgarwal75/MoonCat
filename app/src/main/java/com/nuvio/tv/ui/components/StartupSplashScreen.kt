@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -97,15 +96,18 @@ fun StartupSplashScreen(
             )
         }
 
-        androidx.compose.foundation.Image(
-            painter = androidx.compose.ui.res.painterResource(R.drawable.mooncat_splash_v102),
-            contentDescription = null,
+        Column(
             modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
-            LoadingIndicator(modifier = Modifier.align(Alignment.TopCenter)
-                .offset(y = maxHeight * 0.82f - 14.dp).size(28.dp))
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            BrandWordmark(
+                modifier = Modifier.height(48.dp),
+                contentDescription = stringResource(R.string.cd_nuvio_logo),
+                drawableOverride = brandWordmarkRes
+            )
+            Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxl))
+            LoadingIndicator(modifier = Modifier.size(NuvioTheme.spacing.xxxl))
         }
     }
 }

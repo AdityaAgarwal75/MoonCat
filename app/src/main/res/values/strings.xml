@@ -3383,17 +3383,4 @@
     <string name="autosync_toast_failed_unsupported">Sync failed: Auto Sync doesn\'t support this subtitle format.</string>
     <string name="autosync_label_synced">Auto synced</string>
     <string name="mooncat_cache_512_mb">512 MB (Fire TV default)</string>
-    <string name="mooncat_play_latest_episode">Latest · S%1$d E%2$d</string>
-    <string name="mooncat_studios_title">Studios &amp; collections</string>
-    <string name="mooncat_studios_subtitle">Browse films and series from your favourite studios</string>
-    <string name="mooncat_studios_all">All studios</string>
-    <string name="mooncat_studios_all_titles">All titles</string>
-    <string name="mooncat_studios_movies">Movies</string>
-    <string name="mooncat_studios_series">Series</string>
-    <string name="mooncat_studios_title_count">%1$d titles</string>
-    <string name="mooncat_studios_browse">Browse %1$d titles</string>
-    <string name="mooncat_studios_loading">Loading collections…</string>
-    <string name="mooncat_studios_error">Could not load collections</string>
-    <string name="mooncat_studios_retry">Retry</string>
-    <string name="mooncat_studios_empty">No titles in this category. Try All titles.</string>
 </resources>

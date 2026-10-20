@@ -94,8 +94,6 @@ fun HeroContentSection(
     nextEpisode: Video?,
     nextToWatch: NextToWatch?,
     onPlayClick: () -> Unit,
-    latestEpisodeLabel: String? = null,
-    onPlayLatestEpisode: () -> Unit = {},
     isPlayEnabled: Boolean = true,
     onPlayLongPress: (() -> Unit)? = null,
     isInLibrary: Boolean,
@@ -264,14 +262,6 @@ fun HeroContentSection(
                                 onPlayFocusRestored()
                             }
                         )
-
-                        if (latestEpisodeLabel != null) {
-                            PlayButton(
-                                text = latestEpisodeLabel,
-                                onClick = onPlayLatestEpisode,
-                                onFocusRestored = onHeroActionFocused
-                            )
-                        }
 
                         ActionIconButton(
                             icon = if (isInLibrary) Icons.Default.Check else null,

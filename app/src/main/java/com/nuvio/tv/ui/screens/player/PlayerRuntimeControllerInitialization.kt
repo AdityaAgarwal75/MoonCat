@@ -555,8 +555,11 @@ internal fun PlayerRuntimeController.initializePlayer(
                     maxBufferMs = bufferSettings.maxBufferMs,
                     bufferForPlaybackMs = bufferSettings.bufferForPlaybackMs,
                     bufferForPlaybackAfterRebufferMs = bufferSettings.bufferForPlaybackAfterRebufferMs,
-                    // The Fire TV memory ceiling also applies when the source cannot fill the time target.
-                    prioritizeTimeOverSizeThresholds = false,
+                    // Allow buffering past the byte budget until the minimum time threshold is
+                    // met. Without this, high-bitrate remux files (e.g. 100+ Mbps UHD MKV with
+                    // multiple audio tracks) exhaust the 500MB byte cap in <5s of content before
+                    // minBufferMs is satisfied, leaving ExoPlayer stuck in STATE_BUFFERING.
+                    prioritizeTimeOverSizeThresholds = true,
                     backBufferDurationMs = backBufferMsAtBuild,
                     retainBackBufferFromKeyframe = true,
                     budgetBytes = budgetBytes,
@@ -572,9 +575,6 @@ internal fun PlayerRuntimeController.initializePlayer(
                             "(1.5s back buffer, no VOD cache) host=${url.safeHost()}"
                 )
                 DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(30_000, 90_000, 2_500, 8_000)
-                    .setTargetBufferBytes(MemoryBudget.budgetMb * 1024 * 1024)
-                    .setPrioritizeTimeOverSizeThresholds(false)
                     .setBackBuffer(1_500, /* retainBackBufferFromKeyframe = */ true)
                     .build()
             }
@@ -785,9 +785,6 @@ internal fun PlayerRuntimeController.initializePlayer(
                     )
                 }
 
-                // Limit adaptive manifests too, even when an addon omitted its resolution label.
-                setParameters(buildUponParameters().setMaxVideoSize(1920, 1080)
-                    .setExceedVideoConstraintsIfNecessary(false).setForceHighestSupportedBitrate(false))
                 if (preferredAudioLanguages.isNotEmpty()) {
                     setParameters(buildUponParameters().setPreferredAudioLanguages(*preferredAudioLanguages.toTypedArray()))
                 }

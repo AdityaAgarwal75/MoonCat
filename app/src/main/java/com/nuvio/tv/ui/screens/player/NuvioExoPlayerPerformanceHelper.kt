@@ -55,8 +55,8 @@ object NuvioExoPlayerPerformanceHelper {
     const val NATIVE_ARENA_POOL_BYTES = 512 * NATIVE_ARENA_CHUNK_SIZE
     const val DEFAULT_NUVIO_TARGET_BUFFER_MB = 175
     const val DEFAULT_NUVIO_TARGET_BUFFER_BYTES = DEFAULT_NUVIO_TARGET_BUFFER_MB * 1024 * 1024
-    const val DEFAULT_NUVIO_MIN_BUFFER_MS = 30_000
-    const val DEFAULT_NUVIO_MAX_BUFFER_MS = 90_000
+    const val DEFAULT_NUVIO_MIN_BUFFER_MS = 15_000
+    const val DEFAULT_NUVIO_MAX_BUFFER_MS = 45_000
     // Native holds its buffers in the arena rather than the java heap, so it can afford a back
     // buffer that keeps a short seek back off the network.
     const val DEFAULT_NUVIO_BACK_BUFFER_MS = 15_000
@@ -75,10 +75,10 @@ object NuvioExoPlayerPerformanceHelper {
     var maxBufferMs: Int = DEFAULT_NUVIO_MAX_BUFFER_MS
 
     @Volatile
-    var bufferForPlaybackMs: Int = 2_500
+    var bufferForPlaybackMs: Int = 3_000
 
     @Volatile
-    var bufferForPlaybackAfterRebufferMs: Int = 8_000
+    var bufferForPlaybackAfterRebufferMs: Int = 3_000
 
     @Volatile
     var backBufferMs: Int = DEFAULT_NUVIO_BACK_BUFFER_MS
@@ -102,8 +102,8 @@ object NuvioExoPlayerPerformanceHelper {
         
         minBufferMs = if (customBuffers) bufferSettings.minBufferMs else DEFAULT_NUVIO_MIN_BUFFER_MS
         maxBufferMs = if (customBuffers) bufferSettings.maxBufferMs else DEFAULT_NUVIO_MAX_BUFFER_MS
-        bufferForPlaybackMs = if (customBuffers) bufferSettings.bufferForPlaybackMs else 2_500
-        bufferForPlaybackAfterRebufferMs = if (customBuffers) bufferSettings.bufferForPlaybackAfterRebufferMs else 8_000
+        bufferForPlaybackMs = if (customBuffers) bufferSettings.bufferForPlaybackMs else 3_000
+        bufferForPlaybackAfterRebufferMs = if (customBuffers) bufferSettings.bufferForPlaybackAfterRebufferMs else 3_000
         backBufferMs = if (customBuffers) bufferSettings.backBufferDurationMs else DEFAULT_NUVIO_BACK_BUFFER_MS
 
         val safeLimitMb = getSafeNativeMemoryLimitMb(context)

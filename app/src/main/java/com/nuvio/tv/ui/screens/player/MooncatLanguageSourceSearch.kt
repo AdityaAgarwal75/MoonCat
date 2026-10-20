@@ -12,7 +12,6 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun MooncatLanguageSourceSearch(
     language: String?,
-    automatic: Boolean = false,
     state: PlayerUiState,
     onEvent: (PlayerEvent) -> Unit,
     onFinished: () -> Unit
@@ -23,13 +22,12 @@ internal fun MooncatLanguageSourceSearch(
         val requested = language ?: return@LaunchedEffect
         fun notice(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
         onEvent(PlayerEvent.OnDismissTransientOverlay)
-        onEvent(if (automatic) PlayerEvent.OnFindPreferredAudioSources else PlayerEvent.OnShowSourcesPanel)
+        onEvent(PlayerEvent.OnShowSourcesPanel)
         notice("Searching for ${languageName(requested)} audio…")
         // Allow source fetching to start, then wait a bounded period for addon responses.
         delay(600)
         var waited = 0
-        while (waited < 8000 && latest.value.isLoadingSourceStreams &&
-            latest.value.sourceAllStreams.none { MoonCatSourcePolicy.advertisesAudio(it, requested) }) {
+        while (waited < 15000 && latest.value.isLoadingSourceStreams) {
             delay(250)
             waited += 250
         }
@@ -40,71 +38,59 @@ internal fun MooncatLanguageSourceSearch(
                     stream.getEffectiveInfoHash().equals(current.currentStreamInfoHash, ignoreCase = true) &&
                     stream.getEffectiveFileIdx() == current.currentStreamFileIdx)
         }
-        // First use a track already exposed by the current file: no source reload.
-        val activeTracks = if (current.isServerStream) current.serverAudioTracks else current.audioTracks
-        AudioLanguageChoices.choices(activeTracks).firstOrNull { it.language == requested }?.let { track ->
-            onEvent(PlayerEvent.OnSelectAudioTrack(track.index))
-            onFinished()
-            return@LaunchedEffect
+        val hint = when (requested) {
+            "hi" -> Regex("(?i)(\\bhindi\\b|\\bhin\\b|🇮🇳)")
+            "en" -> Regex("(?i)(\\benglish\\b|\\beng\\b|🇬🇧|🇺🇸)")
+            else -> Regex("(?i)(\\bjapanese\\b|\\bjpn\\b|🇯🇵)")
         }
-        val candidates = current.sourceAllStreams.filter { stream ->
-            stream != originalSource && MoonCatSourcePolicy.advertisesAudio(stream, requested) &&
-                MoonCatSourcePolicy.suitable(stream) && (stream.getStreamUrl() != null || stream.isTorrent())
-        }.distinctBy { it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }
-        val remaining = MoonCatSourcePolicy.rank(candidates).take(7).toMutableList()
-        // Automatic repair must always be able to restore the playing file on a false audio label.
-        if (automatic && originalSource == null) {
-            onFinished()
-            return@LaunchedEffect
-        }
-        if (remaining.isEmpty()) {
+        val candidate = current.sourceAllStreams
+            .filter { stream ->
+                stream != originalSource && hint.containsMatchIn(listOfNotNull(stream.name, stream.title, stream.description).joinToString(" ")) &&
+                    stream.getStreamUrl() != current.currentStreamUrl &&
+                    MoonCatSourcePolicy.suitable(stream) && (stream.getStreamUrl() != null || stream.isTorrent())
+            }
+            .sortedBy(MoonCatSourcePolicy::qualityTier).firstOrNull()
+        if (candidate == null) {
             notice("No source advertises ${languageName(requested)} audio. You can browse Sources.")
             onFinished()
             return@LaunchedEffect
         }
-        // Bad release labels must not strand the user on the first incorrect file.
-        // Try at most three distinct files, then return to the original stream.
-        repeat(minOf(3, remaining.size)) {
-            val candidate = com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(remaining)
-                ?: remaining.firstOrNull { it.isTorrent() } ?: return@repeat
-            remaining.remove(candidate)
-            notice("Checking ${languageName(requested)} audio…")
-            onEvent(PlayerEvent.OnSourceStreamSelected(candidate))
-            waited = 0
-            while (waited < 8000) {
-                delay(250)
-                waited += 250
-                val observed = latest.value
-                val sourceMatches = audioSourceIdentityMatches(
-                    candidateUrl = candidate.getStreamUrl(),
-                    candidateHash = candidate.getEffectiveInfoHash(),
-                    candidateFileIndex = candidate.getEffectiveFileIdx(),
-                    observedUrl = observed.currentStreamUrl,
-                    observedHash = observed.currentStreamInfoHash,
-                    observedFileIndex = observed.currentStreamFileIdx,
-                    originalUrl = current.currentStreamUrl
-                )
-                val tracks = if (observed.isServerStream) observed.serverAudioTracks else observed.audioTracks
-                val track = if (sourceMatches) AudioLanguageChoices.choices(tracks)
-                    .firstOrNull { it.language == requested } else null
-                if (track != null) {
-                    onEvent(PlayerEvent.OnSelectAudioTrack(track.index))
-                    notice("${languageName(requested)} audio selected")
-                    onFinished()
-                    return@LaunchedEffect
-                }
-                // The correct file has exposed its tracks, but the promised dub is absent.
-                if (sourceMatches && tracks.isNotEmpty()) break
+        notice("Trying another source; checking its actual audio tracks…")
+        onEvent(PlayerEvent.OnSourceStreamSelected(candidate))
+        waited = 0
+        while (waited < 25000) {
+            delay(250)
+            waited += 250
+            val observed = latest.value
+            // Do not accept old tracks while resolution/download startup still belongs to
+            // the previous source. Exact identity is required before decoder validation.
+            val sourceMatches = audioSourceIdentityMatches(
+                candidateUrl = candidate.getStreamUrl(),
+                candidateHash = candidate.getEffectiveInfoHash(),
+                candidateFileIndex = candidate.getEffectiveFileIdx(),
+                observedUrl = observed.currentStreamUrl,
+                observedHash = observed.currentStreamInfoHash,
+                observedFileIndex = observed.currentStreamFileIdx,
+                originalUrl = current.currentStreamUrl
+            )
+            val tracks = if (observed.isServerStream) observed.serverAudioTracks else observed.audioTracks
+            val track = if (sourceMatches) AudioLanguageChoices.choices(tracks)
+                .firstOrNull { it.language == requested } else null
+            if (track != null) {
+                onEvent(PlayerEvent.OnSelectAudioTrack(track.index))
+                notice("${languageName(requested)} audio selected")
+                onFinished()
+                return@LaunchedEffect
             }
         }
         if (originalSource != null) {
-            // Restore the original source after the bounded candidate budget.
+            // One bounded attempt, then restore the original source; never cycle endlessly.
             onEvent(PlayerEvent.OnSourceStreamSelected(originalSource))
             notice("No verified ${languageName(requested)} audio. Restoring your original source.")
         } else {
             notice("This source did not expose playable ${languageName(requested)} audio. Choose another source.")
         }
-        if (!automatic) onEvent(PlayerEvent.OnShowSourcesPanel)
+        onEvent(PlayerEvent.OnShowSourcesPanel)
         onFinished()
     }
 }

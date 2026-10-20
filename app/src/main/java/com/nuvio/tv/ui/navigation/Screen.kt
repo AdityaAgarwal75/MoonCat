@@ -137,7 +137,6 @@ sealed class Screen(val route: String) {
         }
     }
     data object News : Screen("news")
-    data object Studios : Screen("studios")
     data object Search : Screen("search")
     data object Discover : Screen("discover")
     data object Library : Screen("library")

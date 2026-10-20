@@ -46,17 +46,7 @@ class MooncatCatalogInterceptor(
 
     private fun catalog(language: String, type: String, id: String, skip: Int): String {
         if (id == "airing") return airing(language, skip)
-        if (id == "hindi-serials" && type == "series") return gson.toJson(mapOf("metas" to hindiTvSerials().drop(skip).take(20)))
         if (id == "anime-upcoming") return upcomingAnime(skip)
-        val regional = REGIONAL_SHELVES[id]
-        if (regional != null && regional.first == type) {
-            return getJson("$INDIAN_CATALOG/catalog/$type/${regional.second}/skip=$skip.json")
-        }
-        val genre = GENRE_SHELVES[id]
-        if (genre != null) {
-            val encoded = java.net.URLEncoder.encode(genre, "UTF-8")
-            return getJson("https://v3-cinemeta.strem.io/catalog/$type/top/genre=$encoded&skip=$skip.json")
-        }
         val config = if (language == "hi") HINDI_CONFIG else ENGLISH_CONFIG
         val provider = "$TMDB/$config/catalog/$type"
         val url = when (id) {
@@ -65,20 +55,6 @@ class MooncatCatalogInterceptor(
             "upcoming" -> "$provider/tmdb.year/genre=${LocalDate.now().year + 1}&skip=$skip.json"
             "new" -> "$provider/tmdb.latest/skip=$skip.json"
             else -> throw IOException("Unknown catalog")
-        }
-        // Prefer a Hindi-only source with IMDb IDs and artwork. The older TMDB
-        // endpoint frequently times out, which used to leave the Hindi home empty.
-        if (language == "hi" && id == "language" && type in setOf("movie", "series")) {
-            val regionalId = if (type == "series") "hi_series" else "hi"
-            val regional = "$INDIAN_CATALOG/catalog/$type/$regionalId/skip=$skip.json"
-            return try {
-                val payload = getJson(regional)
-                val metas = gson.fromJson(payload, JsonObject::class.java)?.getAsJsonArray("metas")
-                if (metas == null || metas.size() == 0) throw IOException("Hindi catalogue empty")
-                payload
-            } catch (_: Exception) {
-                getJson(url) // Independent backup provider, never fake Hindi titles.
-            }
         }
         return getJson(url)
     }
@@ -135,16 +111,7 @@ class MooncatCatalogInterceptor(
 
     companion object {
         const val HOST = "catalog.mooncat.local"
-        const val INDIAN_CATALOG = "https://indian-regional-catalog.vercel.app"
         const val TMDB = "https://94c8cb9f702d-tmdb-addon.baby-beamup.club"
-        private val REGIONAL_SHELVES = mapOf(
-            "hindi-dubbed" to ("movie" to "hindi_dubbed"),
-            "hindi-tv" to ("series" to "hi_series"),
-            "ott" to ("movie" to "ott_releases"),
-            "tamil" to ("movie" to "ta"), "telugu" to ("movie" to "te"),
-            "malayalam" to ("movie" to "ml"), "punjabi" to ("movie" to "pa")
-        )
-        private val GENRE_SHELVES = mapOf("family" to "Family", "comedy" to "Comedy", "documentary" to "Documentary", "crime" to "Crime")
         // lz-string encoded {language, returnImdbId:true, provideImdbId:true}; no API credentials.
         private const val HINDI_CONFIG = "N4IgNghgdg5grhGBTEAuEALAlgWgJIByIANCAE5IAucZUeAtgCYBGejaIlZcKpADmQD2ANyyMkDFmw5ceIAL5A"
         private const val ENGLISH_CONFIG = "N4IgNghgdg5grhGBTEAuESoFoCqBlEAGhACckAXOEqASQFsATAIxobRHJLhWIAcSA9gDcAlgyT1mrdp24gAvkA"
@@ -152,17 +119,6 @@ class MooncatCatalogInterceptor(
         /** Bootstrap documented resource IDs so first launch does not wait on remote manifests. */
         fun bootstrapManifest(baseUrl: String): Addon? {
             manifest(baseUrl)?.let { return it }
-            val httpProvider = when (baseUrl.trimEnd('/')) {
-                "https://torrentsdb.com" -> "TorrentsDB"
-                "https://hdhub.thevolecitor.qzz.io" -> "HDHub"
-                else -> null
-            }
-            if (httpProvider != null) {
-                return Addon(id = "mooncat.provider.${if (httpProvider == "HDHub") "hdhub" else "torrentsdb"}",
-                    name = httpProvider, version = "1.0.0", description = "Free source discovery with no subscription. Public instance availability varies; configure or replace its URL in Addons if needed.",
-                    logo = null, baseUrl = baseUrl, catalogs = emptyList(), types = listOf(ContentType.MOVIE, ContentType.SERIES),
-                    idPrefixes = listOf("tt"), resources = listOf(AddonResource("stream", listOf("movie", "series"), listOf("tt"))))
-            }
             if (baseUrl == "https://v3-cinemeta.strem.io") {
                 val genres = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
                 val catalogs = listOf(ContentType.MOVIE, ContentType.SERIES).flatMap { type ->
@@ -182,7 +138,7 @@ class MooncatCatalogInterceptor(
                 val catalogs = listOf("kitsu-anime-trending" to "Anime · Trending", "kitsu-anime-airing" to "Anime · Airing",
                     "kitsu-anime-popular" to "Anime · Popular", "kitsu-anime-rating" to "Anime · Top rated").map { (id, title) ->
                     val skip = if (id == "kitsu-anime-trending") emptyList() else listOf(CatalogExtra("skip"))
-                    CatalogDescriptor(type = ContentType.UNKNOWN, rawType = "anime", id = id, name = title, pageSize = if (id in setOf("hindi-dubbed", "ott")) 10 else 20,
+                    CatalogDescriptor(type = ContentType.UNKNOWN, rawType = "anime", id = id, name = title, pageSize = 20,
                         showInHome = true, hasExplicitShowInHome = true, extra = skip, extraSupported = skip.map { it.name })
                 } + CatalogDescriptor(type = ContentType.UNKNOWN, rawType = "anime", id = "kitsu-anime-list", name = "Anime · Search",
                     extra = listOf(CatalogExtra("search", isRequired = true), CatalogExtra("skip")), extraSupported = listOf("search", "skip"), extraRequired = listOf("search"))
@@ -204,23 +160,12 @@ class MooncatCatalogInterceptor(
         fun manifest(baseUrl: String): Addon? {
             if (!baseUrl.startsWith("https://$HOST/")) return null
             val language = if (baseUrl.endsWith("/hi")) "Hindi" else "English"
-            fun shelf(type: ContentType, id: String, title: String) = CatalogDescriptor(type = type, id = id, name = title, pageSize = if (id in setOf("hindi-dubbed", "ott")) 10 else 20,
+            fun shelf(type: ContentType, id: String, title: String) = CatalogDescriptor(type = type, id = id, name = title, pageSize = 20,
                 extra = listOf(CatalogExtra("skip")), extraSupported = listOf("skip"), showInHome = true, hasExplicitShowInHome = true)
             return Addon(id = "mooncat.discovery.${if (language == "Hindi") "hi" else "en"}", name = "MoonCat Discovery", version = "1.0.0",
                 description = "Language discovery and new releases: TMDB Addon / The Movie Database. Airing today: TVmaze. Anime: Kitsu. Upcoming movies cover next calendar year. This product uses the TMDB API but is not endorsed or certified by TMDB.",
                 logo = null, baseUrl = baseUrl, types = listOf(ContentType.MOVIE, ContentType.SERIES), catalogs = listOf(
-                    shelf(ContentType.MOVIE, "language", "$language movies"), shelf(ContentType.SERIES, "language", "$language series · TV & web shows"),
-                    shelf(ContentType.SERIES, "hindi-serials", "Hindi TV serials"),
-                    shelf(ContentType.MOVIE, "hindi-dubbed", "Hindi dubbed movies"),
-                    shelf(ContentType.MOVIE, "ott", "Indian OTT releases"),
-                    shelf(ContentType.MOVIE, "family", "Family movies"),
-                    shelf(ContentType.SERIES, "comedy", "Comedy series"),
-                    shelf(ContentType.SERIES, "crime", "Crime & thrillers"),
-                    shelf(ContentType.MOVIE, "documentary", "Documentaries"),
-                    shelf(ContentType.MOVIE, "tamil", "Tamil movies"),
-                    shelf(ContentType.MOVIE, "telugu", "Telugu movies"),
-                    shelf(ContentType.MOVIE, "malayalam", "Malayalam movies"),
-                    shelf(ContentType.MOVIE, "punjabi", "Punjabi movies"),
+                    shelf(ContentType.MOVIE, "language", "$language movies"), shelf(ContentType.SERIES, "language", "$language series"),
                     shelf(ContentType.MOVIE, "new", "New movie releases · worldwide"), shelf(ContentType.SERIES, "new", "New series · worldwide"),
                     shelf(ContentType.MOVIE, "upcoming", "Upcoming movies · ${LocalDate.now().year + 1}"),
                     shelf(ContentType.SERIES, "airing", "$language · Airing today"), shelf(ContentType.SERIES, "anime-upcoming", "Anime · Upcoming")

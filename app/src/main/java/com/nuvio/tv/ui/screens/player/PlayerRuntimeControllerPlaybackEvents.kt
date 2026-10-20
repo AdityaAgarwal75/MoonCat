@@ -1667,9 +1667,6 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
         PlayerEvent.OnShowSourcesPanel -> {
             showSourcesPanel()
         }
-        PlayerEvent.OnFindPreferredAudioSources -> {
-            loadSourceStreams(forceRefresh = false)
-        }
         PlayerEvent.OnDismissSourcesPanel -> {
             dismissSourcesPanel()
         }

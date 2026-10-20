@@ -39,12 +39,10 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
-import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class NuvioApplication : Application(), SingletonImageLoader.Factory {
 
-    @Inject lateinit var mooncatAddonPreferences: com.nuvio.tv.data.local.AddonPreferences
     @Inject lateinit var startupSyncService: StartupSyncService
     @Inject lateinit var androidTvChannelSyncService: AndroidTvChannelSyncService
     @Inject lateinit var sentrySettingsDataStore: SentrySettingsDataStore
@@ -85,9 +83,6 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
-            mooncatAddonPreferences.installMooncatProviderOnce()
-        }
         SentryInitializer.start(this, sentrySettingsDataStore)
         PluginRuntimeHooks.onApplicationCreate(this)
         androidTvChannelSyncService.start()
