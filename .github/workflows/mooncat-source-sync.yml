@@ -1,0 +1,60 @@
+name: Import reviewed MoonCat v1.0.2 source
+
+on:
+  push:
+    branches: [ci/github-first-android-builds]
+    paths: [.github/workflows/mooncat-source-sync.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Check out migration branch
+        uses: actions/checkout@v4
+        with:
+          ref: ci/github-first-android-builds
+          persist-credentials: true
+
+      - name: Download vetted source-only snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --connect-timeout 15 \
+            "https://mooncat.15-252-234-187.sslip.io/mooncat-v102-github-sync-20261020.tar.gz" \
+            -o /tmp/mooncat-v102-src.tar.gz
+          echo "7064acbe244f88981a113a727e0cc12791b3d334b49ed17d43831b54f9a8b18a  /tmp/mooncat-v102-src.tar.gz" | sha256sum -c -
+          python3 - <<'PY'
+          import tarfile
+          t = tarfile.open("/tmp/mooncat-v102-src.tar.gz")
+          members = t.getmembers()
+          assert len(members) == 36, "Unexpected source snapshot entry count"
+          for m in members:
+              assert m.isfile(), f"Unexpected non-file entry: {m.name}"
+              assert not m.name.startswith("/") and ".." not in m.name.split("/"), m.name
+              assert m.name.startswith(("app/", "mobile/")) or m.name == "settings.gradle.kts", m.name
+              assert m.name.endswith((".kt",".kts",".java",".xml",".json",".png",".webp")), m.name
+          print("Verified all",len(members),"allowlisted source files")
+          PY
+          tar -xzf /tmp/mooncat-v102-src.tar.gz
+
+      - name: Commit source and assets to GitHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf /tmp/mooncat-v102-src.tar.gz > /tmp/mooncat-v102-paths.txt
+          while IFS= read -r path; do
+            git add -- "$path"
+          done < /tmp/mooncat-v102-paths.txt
+          if git diff --cached --quiet; then
+            echo "No changes to synchronize."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat: import MoonCat 1.0.2 TV and mobile source, branding and catalogues"
+          git push origin HEAD:ci/github-first-android-builds
