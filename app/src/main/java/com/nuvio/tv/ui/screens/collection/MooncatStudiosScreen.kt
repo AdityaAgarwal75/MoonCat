@@ -68,13 +68,16 @@ fun MooncatStudiosScreen(onOpen: (MooncatTitle) -> Unit) {
                 val gson = Gson()
                 val type = object : TypeToken<List<MooncatTitle>>() {}.type
                 mooncatStudios.associate { studio ->
-                    studio.id to java.util.zip.GZIPInputStream(context.assets.open("studios/${studio.id}.json.gz")).bufferedReader().use {
+                    studio.id to context.assets.open("studios/${studio.id}.json").bufferedReader().use {
                         gson.fromJson<List<MooncatTitle>>(it, type).distinctBy { work -> work.imdb }
                     }
                 }
             }
         }
-        loaded.onSuccess { catalogues = it }.onFailure { error = true }
+        loaded.onSuccess { catalogues = it }.onFailure {
+            android.util.Log.e("MooncatStudios", "Packaged studio catalogue could not be loaded", it)
+            error = true
+        }
     }
     BackHandler(selectedId != null) { selectedId = null }
     val selected = mooncatStudios.firstOrNull { it.id == selectedId }

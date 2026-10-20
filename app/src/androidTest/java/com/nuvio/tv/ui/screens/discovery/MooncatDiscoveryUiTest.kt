@@ -17,14 +17,20 @@ import java.io.File
 class MooncatDiscoveryUiTest {
     @get:Rule val ui = createComposeRule()
     private fun screenshot(name: String) {
-        val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
+        val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "screenshots").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use {
             ui.onRoot().captureToImage().asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
         }
     }
     @Test fun studiosLoadsPosterShelvesAndOpensMarvelCatalogue() {
         ui.setContent { NuvioTheme { MooncatStudiosScreen {} } }
-        ui.waitUntil(15000) { ui.onAllNodesWithContentDescription("Marvel").fetchSemanticsNodes().isNotEmpty() }
+        try {
+            ui.waitUntil(15000) { ui.onAllNodesWithContentDescription("Marvel").fetchSemanticsNodes().isNotEmpty() }
+        } catch (failure: Throwable) {
+            screenshot("studios-failed")
+            println(ui.onRoot().printToString())
+            throw failure
+        }
         screenshot("studios")
         ui.onNodeWithContentDescription("Marvel").performClick()
         ui.onNodeWithText("● All titles").assertExists()
@@ -37,7 +43,7 @@ class MooncatDiscoveryUiTest {
         ui.setContent { NuvioTheme { MooncatNewsScreen {} } }
         ui.onNodeWithContentDescription("DD News").assertExists()
         screenshot("news")
-        ui.onNodeWithText("English").performClick()
+        ui.onAllNodesWithText("English").onFirst().performClick()
         ui.onNodeWithContentDescription("India Today").assertExists()
         ui.onNodeWithContentDescription("DD News").assertDoesNotExist()
         screenshot("news-english")

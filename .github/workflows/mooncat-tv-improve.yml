@@ -40,6 +40,7 @@ jobs:
         run: |
           APK="$(find app/build/outputs/apk/full/release -name '*unsigned*.apk' -print -quit)"
           test -s "$APK"
+          python3 scripts/validate_packaged_catalogues.py "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep "package: name='dev.mooncat.tv' versionCode='10005'"
       - uses: actions/upload-artifact@v4
         with:
@@ -90,7 +91,8 @@ jobs:
             adb install -r "$(find app/build/outputs/apk/androidTest/full/debug -name '*.apk' -print -quit)"
             adb shell am instrument -w -e class com.nuvio.tv.ui.screens.discovery.MooncatDiscoveryUiTest dev.mooncat.tv.debug.test/androidx.test.runner.AndroidJUnitRunner | tee /tmp/mooncat-ui-results.txt
             mkdir -p ui-results
-            adb pull /sdcard/Android/data/dev.mooncat.tv.debug/files/screenshots ui-results/ || true
+            adb exec-out run-as dev.mooncat.tv.debug tar -cf - -C files screenshots > ui-results/screenshots.tar || true
+            tar -xf ui-results/screenshots.tar -C ui-results || true
             cp /tmp/mooncat-ui-results.txt ui-results/
             grep -q 'OK (2 tests)' /tmp/mooncat-ui-results.txt
       - uses: actions/upload-artifact@v4
