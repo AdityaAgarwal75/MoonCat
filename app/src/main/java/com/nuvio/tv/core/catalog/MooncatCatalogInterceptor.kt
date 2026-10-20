@@ -56,6 +56,20 @@ class MooncatCatalogInterceptor(
             "new" -> "$provider/tmdb.latest/skip=$skip.json"
             else -> throw IOException("Unknown catalog")
         }
+        // Prefer a Hindi-only source with IMDb IDs and artwork. The older TMDB
+        // endpoint frequently times out, which used to leave the Hindi home empty.
+        if (language == "hi" && id == "language" && type in setOf("movie", "series")) {
+            val regionalId = if (type == "series") "hi_series" else "hi"
+            val regional = "$INDIAN_CATALOG/catalog/$type/$regionalId/skip=$skip.json"
+            return try {
+                val payload = getJson(regional)
+                val metas = gson.fromJson(payload, JsonObject::class.java)?.getAsJsonArray("metas")
+                if (metas == null || metas.size() == 0) throw IOException("Hindi catalogue empty")
+                payload
+            } catch (_: Exception) {
+                getJson(url) // Independent backup provider, never fake Hindi titles.
+            }
+        }
         return getJson(url)
     }
 
@@ -111,6 +125,7 @@ class MooncatCatalogInterceptor(
 
     companion object {
         const val HOST = "catalog.mooncat.local"
+        const val INDIAN_CATALOG = "https://indian-regional-catalog.vercel.app"
         const val TMDB = "https://94c8cb9f702d-tmdb-addon.baby-beamup.club"
         // lz-string encoded {language, returnImdbId:true, provideImdbId:true}; no API credentials.
         private const val HINDI_CONFIG = "N4IgNghgdg5grhGBTEAuEALAlgWgJIByIANCAE5IAucZUeAtgCYBGejaIlZcKpADmQD2ANyyMkDFmw5ceIAL5A"

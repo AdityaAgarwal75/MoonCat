@@ -107,8 +107,8 @@ android {
         minSdk = 24
         ndk { abiFilters += listOf("armeabi-v7a") }
         targetSdk = 36
-        versionCode = 10001
-        versionName = "1.0.0"
+        versionCode = 10003
+        versionName = "1.0.2"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
@@ -351,8 +351,6 @@ afterEvaluate {
 
 composeCompiler {
     // Enable Compose compiler metrics for performance analysis
-    metricsDestination = layout.buildDirectory.dir("compose_metrics")
-    reportsDestination = layout.buildDirectory.dir("compose_reports")
     stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose_stability_config.conf"))
 }
 

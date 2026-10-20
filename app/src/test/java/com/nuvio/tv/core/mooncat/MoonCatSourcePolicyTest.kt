@@ -12,7 +12,7 @@ internal fun source(name: String, url: String? = null) = Stream(
 
 class MoonCatSourcePolicyTest {
     @Test fun `4k remux and large releases are excluded`() {
-        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p REMUX", "Film 1080p 40 GB", "Film 1080p 7 GiB")
+        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p REMUX", "Film 1080p 40 GB", "Film 1080p 7 GiB", "Film 1080p CAM", "Film 1080p TeleSync", "Film 480p 1 GB")
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
         assertTrue(MoonCatSourcePolicy.suitable(source("Film Hindi English Japanese 1080p 2.5 GB")))
     }
