@@ -53,10 +53,23 @@ jobs:
       - name: Test TV app
         run: ./gradlew :app:testFullDebugUnitTest --no-daemon --max-workers=2 --console=plain
 
+      - name: Upload test results if tests fail
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-TV-test-reports-${{ github.run_number }}
+          path: |
+            app/build/test-results/testFullDebugUnitTest/
+            app/build/reports/tests/testFullDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Build TV debug APK
+        if: ${{ !cancelled() }}
         run: ./gradlew :app:assembleFullDebug --no-daemon --max-workers=2 --console=plain
 
       - name: Build mobile debug APK when module is available
+        if: ${{ !cancelled() }}
         run: |
           if grep -Fq 'include(":mobile")' settings.gradle.kts && test -f mobile/build.gradle.kts; then
             ./gradlew :mobile:assembleDebug --no-daemon --max-workers=2 --console=plain
@@ -65,6 +78,7 @@ jobs:
           fi
 
       - name: Upload TV APK for testing
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: MoonCat-TV-debug-${{ github.run_number }}
@@ -73,7 +87,7 @@ jobs:
           retention-days: 14
 
       - name: Upload mobile APK for testing (if present)
-        if: hashFiles('mobile/build/outputs/apk/debug/*.apk') != ''
+        if: ${{ !cancelled() && hashFiles('mobile/build/outputs/apk/debug/*.apk') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: MoonCat-Mobile-debug-${{ github.run_number }}
