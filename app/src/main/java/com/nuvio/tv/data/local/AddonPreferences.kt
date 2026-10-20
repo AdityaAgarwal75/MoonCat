@@ -86,12 +86,13 @@ class AddonPreferences @Inject constructor(
 
     suspend fun installMooncatProviderOnce() {
         val ds = store(1)
-        val marker = booleanPreferencesKey("mooncat_mediafusion_added_v104")
+        val marker = booleanPreferencesKey("mooncat_http_providers_added_v105")
         ds.edit { prefs ->
             if (prefs[marker] == true) return@edit
             val urls = getCurrentList(prefs)
-            val provider = "https://mediafusion.elfhosted.com"
-            if (provider !in urls) prefs[orderedUrlsKey] = gson.toJson(urls + provider)
+            val providers = listOf("https://mediafusion.elfhosted.com", "https://torrentsdb.com", "https://hdhub.thevolecitor.qzz.io")
+            val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
+            if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
             prefs[marker] = true
         }
     }
@@ -257,6 +258,8 @@ class AddonPreferences @Inject constructor(
         "https://opensubtitles-v3.strem.io",
         "https://anime-kitsu.strem.fun",
         "https://mediafusion.elfhosted.com",
+        "https://torrentsdb.com",
+        "https://hdhub.thevolecitor.qzz.io",
         if (profileId == 1) "https://torrentio.strem.fun/language=hindi"
         else "https://torrentio.strem.fun/language=english"
     )

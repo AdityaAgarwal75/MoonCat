@@ -3,6 +3,18 @@ package com.nuvio.tv.ui.screens.collection
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.nuvio.tv.ui.theme.NuvioTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -57,87 +69,121 @@ fun MooncatStudiosScreen(onOpen: (MooncatTitle) -> Unit) {
     val context = LocalContext.current
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var filter by rememberSaveable(selectedId) { mutableStateOf("all") }
-    var visibleCount by rememberSaveable(selectedId, filter) { mutableIntStateOf(60) }
     var catalogues by remember { mutableStateOf<Map<String, List<MooncatTitle>>>(emptyMap()) }
-    var error by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var loading by remember { mutableStateOf(true) }
     var retry by remember { mutableIntStateOf(0) }
+    val initialFocus = remember { FocusRequester() }
     LaunchedEffect(retry) {
-        error = false
+        loading = true
         val loaded = withContext(Dispatchers.IO) {
-            runCatching {
-                val gson = Gson()
-                val type = object : TypeToken<List<MooncatTitle>>() {}.type
-                mooncatStudios.associate { studio ->
-                    studio.id to context.assets.open("studios/${studio.id}.json").bufferedReader().use {
-                        gson.fromJson<List<MooncatTitle>>(it, type).distinctBy { work -> work.imdb }
+            val gson = Gson()
+            val type = object : TypeToken<List<MooncatTitle>>() {}.type
+            mooncatStudios.associate { studio ->
+                studio.id to runCatching {
+                    // AAPT expands .json.gz assets while packaging the APK.
+                    val input = runCatching { context.assets.open("studios/${studio.id}.json") }
+                        .getOrElse { java.util.zip.GZIPInputStream(context.assets.open("studios/${studio.id}.json.gz")) }
+                    input.bufferedReader().use { reader ->
+                        gson.fromJson<List<MooncatTitle>>(reader, type)
+                            .filter { it.imdb.matches(Regex("tt[0-9]+")) }.distinctBy { it.imdb }
                     }
                 }
             }
         }
-        loaded.onSuccess { catalogues = it }.onFailure {
-            android.util.Log.e("MooncatStudios", "Packaged studio catalogue could not be loaded", it)
-            error = true
+        catalogues = loaded.mapValues { it.value.getOrDefault(emptyList()) }
+        failed = loaded.filterValues { it.isFailure }.keys
+        loading = false
+    }
+    LaunchedEffect(loading, selectedId, filter) {
+        if (!loading) {
+            withFrameNanos { }
+            runCatching { initialFocus.requestFocus() }
         }
     }
     BackHandler(selectedId != null) { selectedId = null }
     val selected = mooncatStudios.firstOrNull { it.id == selectedId }
-    val catalogue = catalogues[selectedId].orEmpty().filter { filter == "all" || it.type == filter }
-    Column(Modifier.fillMaxSize().background(Color(0xFF080B14))) {
-        Column(Modifier.padding(start = 32.dp, top = 24.dp, end = 32.dp, bottom = 8.dp)) {
-            Text(selected?.name ?: "Studios & Collections", style = MaterialTheme.typography.headlineLarge)
+    val catalogue = remember(catalogues, selectedId, filter) {
+        catalogues[selectedId].orEmpty().filter { filter == "all" || it.type == filter }
+    }
+    val spacing = NuvioTheme.spacing
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Column(Modifier.padding(horizontal = 32.dp, vertical = spacing.lg)) {
+            Text(selected?.name ?: stringResource(R.string.mooncat_studios_title), style = MaterialTheme.typography.headlineLarge)
             Text(
-                if (selected == null) "Find your next film. Explore the worlds you love."
-                else "${catalogue.size} titles  ·  ${if (filter == "all") "Movies & series" else if (filter == "movie") "Movies" else "Series"}",
-                color = Color(0xFFA8B0C4), modifier = Modifier.padding(top = 6.dp)
+                if (selected == null) stringResource(R.string.mooncat_studios_subtitle)
+                else stringResource(R.string.mooncat_studios_title_count, catalogue.size),
+                color = NuvioTheme.extendedColors.textSecondary, modifier = Modifier.padding(top = spacing.sm)
             )
         }
-        if (error) {
-            Text("Unable to load collections", Modifier.padding(32.dp))
-            Button(onClick = { retry++ }, modifier = Modifier.padding(horizontal = 32.dp)) { Text("Retry") }
-        } else if (catalogues.isEmpty()) {
-            Text("Loading collections…", Modifier.padding(32.dp))
+        if (loading) {
+            Text(stringResource(R.string.mooncat_studios_loading), Modifier.padding(32.dp))
+        } else if (selectedId in failed || failed.size == mooncatStudios.size) {
+            Text(stringResource(R.string.mooncat_studios_error), Modifier.padding(32.dp))
+            Button(onClick = { retry++ }, modifier = Modifier.padding(horizontal = 32.dp).focusRequester(initialFocus)) {
+                Text(stringResource(R.string.mooncat_studios_retry))
+            }
         } else if (selected == null) {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(24.dp), contentPadding = PaddingValues(bottom = 40.dp)) {
-                item {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(spacing.lg), contentPadding = PaddingValues(bottom = 40.dp)) {
+                item(key = "studio-picker") {
+                    LazyRow(modifier = Modifier.focusRestorer().focusGroup(),
+                        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
                         items(mooncatStudios, key = { it.id }) { studio ->
-                            Card(onClick = { selectedId = studio.id }, modifier = Modifier.size(160.dp, 90.dp)) {
-                                Image(painterResource(studio.logo), studio.name,
-                                    Modifier.fillMaxSize().background(Color(0xFFF1F1F4)).padding(16.dp), contentScale = ContentScale.Fit)
+                            Card(onClick = { selectedId = studio.id },
+                                modifier = Modifier.size(168.dp, 110.dp).semantics { contentDescription = studio.name }.then(if (studio == mooncatStudios.first()) Modifier.focusRequester(initialFocus) else Modifier),
+                                colors = CardDefaults.colors(containerColor = NuvioTheme.extendedColors.backgroundCard,
+                                    focusedContainerColor = MaterialTheme.colorScheme.primary),
+                                border = CardDefaults.border(focusedBorder = Border(
+                                    border = NuvioTheme.focusRing.border(spacing.xxs), shape = RoundedCornerShape(12.dp))),
+                                scale = CardDefaults.scale(focusedScale = 1.05f)) {
+                                Column(Modifier.fillMaxSize().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Image(painterResource(studio.logo), null,
+                                        Modifier.weight(1f).fillMaxWidth(), contentScale = ContentScale.Fit)
+                                    Text(studio.name, style = MaterialTheme.typography.labelLarge)
+                                }
                             }
                         }
                     }
                 }
                 items(mooncatStudios, key = { it.id }) { studio ->
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(spacing.sm)) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 32.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(studio.name, style = MaterialTheme.typography.titleLarge)
-                            Button(onClick = { selectedId = studio.id }) { Text("Browse ${catalogues[studio.id].orEmpty().size} titles  ›") }
+                            Button(onClick = { selectedId = studio.id }) {
+                                Text(stringResource(R.string.mooncat_studios_browse, catalogues[studio.id].orEmpty().size))
+                            }
                         }
-                        LazyRow(contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        LazyRow(modifier = Modifier.focusRestorer().focusGroup(), contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
                             items(catalogues[studio.id].orEmpty().take(16), key = { it.imdb }) { work -> StudioPoster(work, onOpen) }
                         }
                     }
                 }
             }
         } else {
-            Row(Modifier.padding(horizontal = 32.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { selectedId = null }) { Text("‹ All studios") }
-                listOf("all" to "All titles", "movie" to "Movies", "series" to "Series").forEach { (value, label) ->
-                    Button(onClick = { filter = value }) { Text(if (filter == value) "● $label" else label) }
+            Row(Modifier.padding(horizontal = 32.dp, vertical = spacing.sm).focusRestorer().focusGroup(), horizontalArrangement = Arrangement.spacedBy(spacing.md)) {
+                Button(onClick = { selectedId = null }) { Text(stringResource(R.string.mooncat_studios_all)) }
+                listOf("all" to R.string.mooncat_studios_all_titles, "movie" to R.string.mooncat_studios_movies,
+                    "series" to R.string.mooncat_studios_series).forEach { (value, label) ->
+                    Button(onClick = { filter = value },
+                        modifier = if (value == filter) Modifier.focusRequester(initialFocus) else Modifier,
+                        colors = ButtonDefaults.colors(
+                            containerColor = if (filter == value) MaterialTheme.colorScheme.primary else NuvioTheme.extendedColors.backgroundCard,
+                            contentColor = if (filter == value) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)) {
+                        Text(stringResource(label))
+                    }
                 }
             }
-            // Rows retain the same focusable poster component as Home. Load incrementally for TV memory.
             key(selectedId, filter) {
-                LazyColumn(contentPadding = PaddingValues(32.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                    items(catalogue.take(visibleCount).chunked(6)) { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { row.forEach { work -> StudioPoster(work, onOpen) } }
-                    }
-                    if (catalogue.isEmpty()) item { Text("No titles in this category. Try All titles.", color = Color(0xFFA8B0C4)) }
-                    if (visibleCount < catalogue.size) item {
-                        Button(onClick = { visibleCount += 60 }) { Text("Load more  ·  ${visibleCount.coerceAtMost(catalogue.size)} / ${catalogue.size}") }
-                    }
+                if (catalogue.isEmpty()) Text(stringResource(R.string.mooncat_studios_empty), Modifier.padding(32.dp),
+                    color = NuvioTheme.extendedColors.textSecondary)
+                // A lazy grid keeps TV focus scrolling and only composes the visible posters.
+                LazyVerticalGrid(columns = GridCells.Adaptive(140.dp), contentPadding = PaddingValues(32.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize().focusRestorer().focusGroup()) {
+                    items(catalogue, key = { it.imdb }) { work -> StudioPoster(work, onOpen) }
                 }
             }
         }

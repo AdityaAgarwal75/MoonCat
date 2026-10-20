@@ -7,12 +7,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** First verified preload wins. One shared torrent engine; no competing engine instances. */
+/** Compare bounded verified preloads in one shared engine, with a short quality grace period. */
 object MoonCatTorrentRace {
-    const val MAX_CANDIDATES = 4
-    const val DEADLINE_MS = 4500L
-    suspend fun choose(candidates: List<Stream>, probe: suspend (Stream) -> Boolean): Stream? = coroutineScope {
-        val ranked = MoonCatSourcePolicy.rank(candidates).filter { it.isTorrent() }
+    const val MAX_CANDIDATES = 8
+    const val DEADLINE_MS = 6000L
+    const val QUALITY_GRACE_MS = 700L
+    suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", probe: suspend (Stream) -> Boolean): Stream? = coroutineScope {
+        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage).filter { it.isTorrent() }
             .distinctBy { "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }.take(MAX_CANDIDATES)
         val results = Channel<Stream?>(Channel.UNLIMITED)
         val jobs = ranked.map { candidate ->
@@ -26,8 +27,25 @@ object MoonCatTorrentRace {
             }
         }
         try {
-            repeat(jobs.size) { results.receive()?.let { return@coroutineScope it } }
-            null
+            var completed = 0
+            var first: Stream? = null
+            while (completed < jobs.size && first == null) {
+                first = results.receive()
+                completed++
+            }
+            if (first == null) return@coroutineScope null
+            val ready = mutableListOf(first)
+            // A fast 720p/English file should not beat a ready 1080p/Hindi file by milliseconds.
+            val grace = if (MoonCatSourcePolicy.languageTier(first, preferredLanguage) > 0 &&
+                ranked.any { MoonCatSourcePolicy.languageTier(it, preferredLanguage) == 0 }) DEADLINE_MS else QUALITY_GRACE_MS
+            withTimeoutOrNull(grace) {
+                while (completed < jobs.size) {
+                    results.receive()?.let { ready.add(it) }
+                    completed++
+                }
+            }
+            ready.minWithOrNull(compareBy<Stream> { MoonCatSourcePolicy.languageTier(it, preferredLanguage) }
+                .thenBy(MoonCatSourcePolicy::qualityTier).thenBy(MoonCatSourcePolicy::releaseTier))
         } finally { jobs.forEach { it.cancel() } }
     }
 }

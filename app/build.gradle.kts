@@ -108,8 +108,8 @@ android {
         minSdk = 24
         ndk { abiFilters += listOf(providers.gradleProperty("mooncatAbi").orElse("armeabi-v7a").get()) }
         targetSdk = 36
-        versionCode = 10005
-        versionName = "1.0.4"
+        versionCode = 10006
+        versionName = "1.0.5"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")

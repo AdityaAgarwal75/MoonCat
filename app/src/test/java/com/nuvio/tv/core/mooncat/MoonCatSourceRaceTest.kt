@@ -64,16 +64,56 @@ class MoonCatSourceRaceTest {
             assertNull(request?.getHeader("X-Api-Key"))
         }
     }
-    @Test fun `torrent fallback does not issue a network probe`() = runBlocking {
+    @Test fun `torrent requires native verification instead of an HTTP fallback`() = runBlocking {
         val torrent = source("1080p Hindi English Japanese 2 GB")
-        assertEquals(torrent, MoonCatSourceRace.choose(listOf(torrent)))
+        assertNull(MoonCatSourceRace.choose(listOf(torrent)))
     }
-    @Test fun `race probes no more than seven sources`() = runBlocking {
+    @Test fun `race probes no more than eight sources`() = runBlocking {
         MockWebServer().use { server ->
             repeat(8) { server.enqueue(MockResponse().setBody("video")) }
-            val candidates = (1..8).map { source("1080p $it", server.url("/$it").toString()) }
+            val candidates = (1..12).map { source("1080p $it", server.url("/$it").toString()) }
             assertNotNull(MoonCatSourceRace.choose(candidates))
-            assertEquals(7, server.requestCount)
+            assertEquals(8, server.requestCount)
+        }
+    }
+
+    @Test fun `headroom preserves1080 quality instead of always picking fastest720`() {
+        val hd = source("1080p Hindi WEB-DL")
+        val small = source("720p Hindi WEB-DL")
+        assertEquals(hd, MoonCatSourceRace.selectMeasured(listOf(hd to 1_500_000.0, small to 6_000_000.0)))
+        assertEquals(small, MoonCatSourceRace.selectMeasured(listOf(hd to 80_000.0, small to 1_500_000.0)))
+    }
+
+    @Test fun `Hindi wins among viable files while English remains a fallback`() {
+        val hindi = source("720p Hindi")
+        val english = source("1080p English")
+        assertEquals(hindi, MoonCatSourceRace.selectMeasured(listOf(hindi to 1_000_000.0, english to 4_000_000.0)))
+        assertEquals(english, MoonCatSourceRace.selectMeasured(listOf(hindi to 0.0, english to 4_000_000.0)))
+    }
+
+    @Test fun `HLS chooses a1080 variant and rejects an exclusively4k manifest`() {
+        val master = """#EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=20000000,RESOLUTION=3840x2160
+            ultra.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+            hd.m3u8
+            #EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720
+            small.m3u8
+        """.trimIndent()
+        assertEquals("https://cdn.example/hd.m3u8", MoonCatSourceRace.playlistTarget(master, "https://cdn.example/master.m3u8"))
+        assertNull(MoonCatSourceRace.playlistTarget("#EXTM3U\n#EXT-X-STREAM-INF:RESOLUTION=3840x2160\nultra.m3u8", "https://cdn.example/master.m3u8"))
+        assertEquals("https://cdn.example/video/segment.ts", MoonCatSourceRace.playlistTarget(
+            "#EXTM3U\n#EXTINF:6.0,\nsegment.ts", "https://cdn.example/video/hd.m3u8"))
+    }
+
+    @Test fun `HLS readiness reads media rather than measuring the playlist`() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("#EXTM3U\n#EXTINF:6.0,\nsegment.ts"))
+            server.enqueue(MockResponse().setBody("x".repeat(65536)))
+            val stream = source("1080p Hindi", server.url("/list.m3u8").toString())
+            assertEquals(stream, MoonCatSourceRace.choose(listOf(stream)))
+            assertEquals("/list.m3u8", server.takeRequest().path)
+            assertEquals("/segment.ts", server.takeRequest().path)
         }
     }
 }

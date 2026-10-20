@@ -33,7 +33,7 @@ class MooncatDiscoveryUiTest {
         }
         screenshot("studios")
         ui.onNodeWithContentDescription("Marvel").performClick()
-        ui.onNodeWithText("● All titles").assertExists()
+        ui.onNodeWithText("All titles").assertExists()
         ui.onNodeWithText("Movies").assertExists()
         ui.onNodeWithText("Series").assertExists()
         ui.onAllNodesWithText("Iron Man").onFirst().assertExists()

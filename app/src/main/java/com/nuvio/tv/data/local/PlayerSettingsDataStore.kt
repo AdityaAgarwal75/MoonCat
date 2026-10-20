@@ -167,10 +167,10 @@ data class BufferSettings(
     val retainBackBufferFromKeyframe: Boolean = false
 ) {
     companion object {
-        const val DEFAULT_MIN_BUFFER_MS = 15_000
-        const val DEFAULT_MAX_BUFFER_MS = 45_000
-        const val DEFAULT_BUFFER_FOR_PLAYBACK_MS = 1_500
-        const val DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 3_000
+        const val DEFAULT_MIN_BUFFER_MS = 30_000
+        const val DEFAULT_MAX_BUFFER_MS = 90_000
+        const val DEFAULT_BUFFER_FOR_PLAYBACK_MS = 2_500
+        const val DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS = 8_000
         const val DEFAULT_TARGET_BUFFER_SIZE_MB: Int = 50
         const val DEFAULT_BACK_BUFFER_DURATION_MS = 0
     }
@@ -764,6 +764,16 @@ class PlayerSettingsDataStore @Inject constructor(
                 if (!vodBackBufferZeroed) {
                     if (prefs[vodCacheEnabledKey] == true) prefs[backBufferDurationMsKey] = 0
                     prefs[migrationVodCacheBackBufferZeroedDoneKey] = true
+                }
+
+                val smoothPlaybackMigration = booleanPreferencesKey("mooncat_smooth_buffer_defaults_v105")
+                if (prefs[smoothPlaybackMigration] != true) {
+                    // Upgrade only the shipped defaults; preserve deliberately customized settings.
+                    if (prefs[minBufferMsKey] == 15_000) prefs[minBufferMsKey] = BufferSettings.DEFAULT_MIN_BUFFER_MS
+                    if (prefs[maxBufferMsKey] == 45_000) prefs[maxBufferMsKey] = BufferSettings.DEFAULT_MAX_BUFFER_MS
+                    if (prefs[bufferForPlaybackMsKey] == 1_500) prefs[bufferForPlaybackMsKey] = BufferSettings.DEFAULT_BUFFER_FOR_PLAYBACK_MS
+                    if (prefs[bufferForPlaybackAfterRebufferMsKey] == 3_000) prefs[bufferForPlaybackAfterRebufferMsKey] = BufferSettings.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS
+                    prefs[smoothPlaybackMigration] = true
                 }
 
                 val min = prefs[minBufferMsKey]

@@ -25,10 +25,32 @@ class MoonCatTorrentRaceTest {
         val streams = (1..10).map { torrent(it.toString()) }
         var count = 0
         assertNull(MoonCatTorrentRace.choose(listOf(streams[0]) + streams) { count++; false })
-        assertEquals(4, count)
+        assertEquals(8, count)
     }
     @Test fun `unresponsive probes time out instead of holding the player indefinitely`() = runTest {
         assertNull(MoonCatTorrentRace.choose(listOf(torrent("stuck"))) { delay(100000); true })
-        assertEquals(4500L, testScheduler.currentTime)
+        assertEquals(MoonCatTorrentRace.DEADLINE_MS, testScheduler.currentTime)
+    }
+
+    @Test fun `Hindi ready within grace wins over faster English`() = runTest {
+        val hindi = source("1080p Hindi").copy(infoHash = "hi")
+        val english = source("1080p English").copy(infoHash = "en")
+        assertEquals(hindi, MoonCatTorrentRace.choose(listOf(english, hindi)) {
+            delay(if (it == english) 50 else 400); true
+        })
+    }
+
+    @Test fun `fast720 does not beat a ready1080 by a few milliseconds`() = runTest {
+        val hd = source("1080p Hindi").copy(infoHash = "hd")
+        val small = source("720p Hindi").copy(infoHash = "small")
+        assertEquals(hd, MoonCatTorrentRace.choose(listOf(small, hd)) {
+            delay(if (it == small) 50 else 300); true
+        })
+    }
+
+    @Test fun `failed Hindi falls back to a verified English torrent`() = runTest {
+        val hindi = source("1080p Hindi").copy(infoHash = "hi")
+        val english = source("720p English").copy(infoHash = "en")
+        assertEquals(english, MoonCatTorrentRace.choose(listOf(hindi, english)) { it == english })
     }
 }

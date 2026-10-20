@@ -67,7 +67,8 @@ object StreamAutoPlaySelector {
         selectedPlugins: Set<String>,
         preferredBingeGroup: String? = null,
         preferBingeGroupInSelection: Boolean = false,
-        bingeGroupOnly: Boolean = false
+        bingeGroupOnly: Boolean = false,
+        preferredAudioLanguage: String? = null
     ): Stream? {
         if (streams.isEmpty()) return null
 
@@ -82,7 +83,7 @@ object StreamAutoPlaySelector {
             StreamAutoPlaySource.INSTALLED_ADDONS_ONLY -> streams.filter { it.serverTarget != null || it.addonName in installedAddonNames }
             StreamAutoPlaySource.ENABLED_PLUGINS_ONLY -> streams.filter { it.addonName !in installedAddonNames }
         }
-        val candidateStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(sourceScopedStreams).filter { stream ->
+        val candidateStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(sourceScopedStreams, preferredAudioLanguage).filter { stream ->
             val isAddonStream = stream.addonName in installedAddonNames
             if (stream.serverTarget != null) {
                 true
@@ -100,8 +101,11 @@ object StreamAutoPlaySelector {
         // not be limited by autoplay source/addon selection filters.
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
         if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
-            val bingeGroupMatch = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(streams).firstOrNull { stream ->
+            val bingeGroupMatch = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(streams, preferredAudioLanguage).firstOrNull { stream ->
                 !stream.isExternal() &&
+                    (preferredAudioLanguage == null ||
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(stream, preferredAudioLanguage) ==
+                        candidateStreams.minOf { com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(it, preferredAudioLanguage) }) &&
                     stream.behaviorHints?.bingeGroup == targetBingeGroup &&
                     isPlayable(stream)
             }

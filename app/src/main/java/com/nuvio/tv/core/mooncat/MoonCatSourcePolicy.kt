@@ -5,11 +5,13 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("""(?i)(2160p|4320p|480p|360p|240p|\b4k\b|\b8k\b|remux|hd[ ._-]*cam|cam[ ._-]*rip|hd[ ._-]*(?:ts|tc)|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
+    private val excluded = Regex("""(?i)(2160|4320|1440p|480p|360p|240p|\b[48][ ._-]?k\b|remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
         stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename,
         stream.clientResolve?.stream?.raw?.torrentName, stream.clientResolve?.stream?.raw?.filename,
+        stream.clientResolve?.stream?.raw?.parsed?.rawTitle,
+        stream.clientResolve?.stream?.raw?.parsed?.resolution,
         stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
     fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize
@@ -28,14 +30,17 @@ object MoonCatSourcePolicy {
     fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES): Boolean {
         val episode = stream.clientResolve?.let { it.season != null || it.episode != null || it.mediaType == "series" } == true
         val limit = if (episode) minOf(2_000_000_000L, maxFileBytes) else maxFileBytes
-        return !excluded.containsMatchIn(text(stream)) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
+        val unknownUltraHd = qualityTier(stream) == 2 &&
+            Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""").containsMatchIn(text(stream))
+        return stream.qualityValue <= 1080 && !unknownUltraHd && !excluded.containsMatchIn(text(stream)) &&
+            (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
 
     fun reusableRelease(name: String, filename: String?, size: Long?, preferredLanguage: String, maxFileBytes: Long): Boolean {
         val cached = Stream(name = name, title = filename, description = null, url = null, ytId = null,
             infoHash = null, fileIdx = null, externalUrl = null, behaviorHints = null, addonName = "Cached", addonLogo = null)
         return suitable(cached, maxFileBytes) && (size == null || size in 1..maxFileBytes) &&
-            forPreferredLanguage(listOf(cached), preferredLanguage).isNotEmpty()
+            advertisesAudio(cached, normalizeLanguage(preferredLanguage) ?: "hi")
     }
 
     /** Explicit audio labels outrank unknown audio; subtitles never establish a dub. */
@@ -85,10 +90,43 @@ object MoonCatSourcePolicy {
     fun qualityTier(stream: Stream): Int {
         val description = text(stream)
         return when {
-            description.contains("1080", true) -> 0
-            description.contains("720", true) -> 1
+            stream.qualityValue == 1080 || description.contains("1080", true) -> 0
+            stream.qualityValue == 720 || description.contains("720", true) -> 1
             else -> 2
         }
+    }
+
+    fun languageTier(stream: Stream, language: String = "hi"): Int {
+        val preferred = normalizeLanguage(language) ?: "hi"
+        val hints = languageHints(stream)
+        return when {
+            preferred in hints -> 0
+            (if (preferred == "hi") "en" else "hi") in hints -> 1
+            hints.isEmpty() -> 2
+            else -> 3
+        }
+    }
+
+    /** Retain English/unknown fallbacks when advertised Hindi files fail readiness checks. */
+    fun playbackCandidates(streams: List<Stream>, language: String = "hi"): List<Stream> =
+        rank(streams, language).filter { languageTier(it, language) < 3 }
+
+    /** Keep both free HTTP hosts and torrent swarms in the bounded race, plus language fallbacks. */
+    fun probePool(streams: List<Stream>, slot: Int, language: String): List<Stream> {
+        val preferred = streams.filter { languageTier(it, language) == 0 }
+        return when (slot) {
+            0, 1 -> preferred.filter { !it.isTorrent() && it.getStreamUrl() != null }
+            2, 3 -> preferred.filter { it.isTorrent() }
+            6, 7 -> streams.filter { languageTier(it, language) > 0 }
+            else -> preferred
+        }
+    }
+
+    /** Prefer clean digital releases over unknown encodes within the same resolution. */
+    fun releaseTier(stream: Stream): Int = when {
+        Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""").containsMatchIn(text(stream)) -> 0
+        Regex("""(?i)\b(?:web[ ._-]?rip|hdtv)\b""").containsMatchIn(text(stream)) -> 1
+        else -> 2
     }
 
     /** Seed counts are availability hints, never measured bandwidth. */
@@ -99,5 +137,13 @@ object MoonCatSourcePolicy {
         return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
     }
 
-    fun rank(streams: List<Stream>): List<Stream> = streams.filter { suitable(it) }.sortedWith(compareBy<Stream>(::qualityTier).thenByDescending(::advertisedSeeders))
+    private data class Ranked(val stream: Stream, val language: Int, val quality: Int, val release: Int, val seeders: Int)
+
+    fun rank(streams: List<Stream>, preferredLanguage: String? = null): List<Stream> =
+        streams.asSequence().filter { suitable(it) }.map { stream ->
+            Ranked(stream, if (preferredLanguage == null) 0 else languageTier(stream, preferredLanguage),
+                qualityTier(stream), releaseTier(stream), advertisedSeeders(stream))
+        }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.quality }
+            .thenBy { it.release }.thenBy { if (it.stream.isTorrent()) 1 else 0 }
+            .thenByDescending { it.seeders }).map { it.stream }.toList()
 }

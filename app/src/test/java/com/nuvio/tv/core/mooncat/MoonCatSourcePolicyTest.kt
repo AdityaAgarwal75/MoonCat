@@ -11,6 +11,47 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `equivalent verified HTTP can outrank seed counts without overriding Hindi preference`() {
+        val hindiHttp = source("1080p Hindi WEB-DL", "https://cdn.example/movie")
+        val hindiTorrent = source("1080p Hindi WEB-DL 👤 999")
+        val englishHttp = source("1080p English WEB-DL", "https://cdn.example/english")
+        assertEquals(listOf(hindiHttp, hindiTorrent, englishHttp), MoonCatSourcePolicy.rank(
+            listOf(englishHttp, hindiTorrent, hindiHttp), "hi"))
+    }
+    @Test fun `probe slots include free HTTP Hindi torrents and English fallbacks`() {
+        val http = source("1080p Hindi", "https://cdn.example/movie")
+        val torrent = source("1080p Hindi").copy(infoHash = "hindi")
+        val english = source("1080p English").copy(infoHash = "english")
+        val streams = listOf(torrent, english, http)
+        assertEquals(listOf(http), MoonCatSourcePolicy.probePool(streams, 0, "hi"))
+        assertEquals(listOf(torrent), MoonCatSourcePolicy.probePool(streams, 2, "hi"))
+        assertEquals(listOf(english), MoonCatSourcePolicy.probePool(streams, 6, "hi"))
+    }
+    @Test fun `unlabelled source cannot bypass the structured resolution cap`() {
+        assertFalse(MoonCatSourcePolicy.suitable(source("Video").copy(qualityValue = 2160)))
+        listOf("UHD Hindi", "Ultra HD English", "3840x2160 Hindi", "4-K", "1440p")
+            .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
+    }
+
+    @Test fun `playback candidates keep English fallback after Hindi and exclude other audio`() {
+        val hi = source("720p Hindi")
+        val en = source("1080p English")
+        val unknown = source("1080p")
+        assertEquals(listOf(hi, en, unknown), MoonCatSourcePolicy.playbackCandidates(
+            listOf(en, unknown, source("1080p French"), hi)))
+    }
+
+    @Test fun `clean digital release outranks an unknown release at equal resolution`() {
+        val clean = source("1080p WEB-DL Hindi 👤 100")
+        val unknown = source("1080p Hindi 👤 900")
+        assertEquals(clean, MoonCatSourcePolicy.rank(listOf(unknown, clean)).first())
+    }
+    @Test fun `provider branding does not misclassify an explicitly1080 release as4k`() {
+        assertTrue(MoonCatSourcePolicy.suitable(source("4KHDHub 1080p Hindi WEB-DL 3 GB")))
+        assertTrue(MoonCatSourcePolicy.suitable(source("1080p UHD BluRay Hindi 3 GB")))
+        assertFalse(MoonCatSourcePolicy.suitable(source("4KHDHub 2160p Hindi 3 GB")))
+    }
+
     @Test fun `4k remux and large releases are excluded`() {
         listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p REMUX", "Film 1080p 40 GB", "Film 1080p 7 GiB", "Film 1080p CAM", "Film 1080p TeleSync", "Film 480p 1 GB")
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
@@ -44,7 +85,7 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.advertisesAudio(source("Film [HI + EN] BluRay"), "en"))
     }
     @Test fun `large camera releases remain excluded regardless of claimed HD resolution`() {
-        listOf("HD-CAM 1080p 5 GB", "HDTS Hindi 4 GB", "HDTC 5 GB", "TS 1080p", "TC Hindi", "PreDVD 1080p").forEach {
+        listOf("HD-CAM 1080p 5 GB", "HDTS Hindi 4 GB", "HDTC 5 GB", "HQCAM 1080p", "HQ-TS Hindi", "TSRip", "PDVDRip", "TS 1080p", "TC Hindi", "PreDVD 1080p").forEach {
             assertFalse(it, MoonCatSourcePolicy.suitable(source(it)))
         }
         assertTrue(MoonCatSourcePolicy.suitable(source("BluRay 1080p Hindi English 5 GB")))

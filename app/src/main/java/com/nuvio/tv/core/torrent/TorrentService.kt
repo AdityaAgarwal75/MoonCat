@@ -110,7 +110,7 @@ class TorrentService @Inject constructor(
     }
 
     /** Race small, verified preloads without disturbing an existing playing stream. */
-    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
+    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long, preferredLanguage: String = "hi"): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
         startMutex.withLock {
             if (_state.value is TorrentState.Streaming || _state.value is TorrentState.Connecting) return@withLock null
             val activeEngine = ensureEngine()
@@ -119,7 +119,7 @@ class TorrentService @Inject constructor(
             val added = java.util.Collections.synchronizedSet(mutableSetOf<String>())
             var winner: com.nuvio.tv.domain.model.Stream? = null
             try {
-                winner = com.nuvio.tv.core.mooncat.MoonCatTorrentRace.choose(candidates) { candidate ->
+                winner = com.nuvio.tv.core.mooncat.MoonCatTorrentRace.choose(candidates, preferredLanguage) { candidate ->
                     val hash = candidate.getEffectiveInfoHash() ?: return@choose false
                     val id = activeEngine.addMagnet(buildMagnetUri(hash, (DefaultTorrentTrackers + candidate.sources.orEmpty()).distinct()))
                     added.add(id)
