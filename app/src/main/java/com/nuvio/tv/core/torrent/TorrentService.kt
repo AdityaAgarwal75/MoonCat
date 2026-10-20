@@ -110,7 +110,7 @@ class TorrentService @Inject constructor(
     }
 
     /** Race small, verified preloads without disturbing an existing playing stream. */
-    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long): com.nuvio.tv.domain.model.Stream? =
+    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
         startMutex.withLock {
             if (_state.value is TorrentState.Streaming || _state.value is TorrentState.Connecting) return@withLock null
             val activeEngine = ensureEngine()
@@ -150,6 +150,7 @@ class TorrentService @Inject constructor(
                 if (keep != null) knownTorrentIds.add(keep)
             }
         }
+    }
 
     fun stopStream() {
         scheduleStop(shutdownEngine = false)
