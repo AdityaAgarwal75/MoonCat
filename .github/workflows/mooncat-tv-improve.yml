@@ -1,0 +1,55 @@
+name: MoonCat TV build and regression tests
+on:
+  push:
+    branches: [improve/tv-discovery-playback]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mooncat-tv-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI_UNSIGNED_RELEASE: "true"
+      DOVI_NATIVE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Android SDK
+        run: |
+          SDKMANAGER="$(command -v sdkmanager || find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f -print -quit)"
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+      - name: Validate packaged catalogues and branding
+        run: python3 scripts/validate_tv_assets.py
+      - name: TV regression tests
+        run: |
+          chmod +x gradlew
+          printf 'TRAKT_CLIENT_ID=mooncat-ci-fixture\nTRAKT_CLIENT_SECRET=mooncat-ci-fixture\n' > local.properties
+          ./gradlew :app:testFullReleaseUnitTest --no-daemon --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+          rm local.properties
+      - name: Compile unsigned release for original-key signing
+        run: ./gradlew :app:assembleFullRelease --no-daemon --max-workers=2 --console=plain -Dorg.gradle.jvmargs="-Xmx4g -Dfile.encoding=UTF-8"
+      - name: Verify TV package metadata
+        run: |
+          APK="$(find app/build/outputs/apk/full/release -name '*unsigned*.apk' -print -quit)"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep "package: name='dev.mooncat.tv' versionCode='10005'"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-TV-v1.0.4-unsigned
+          path: app/build/outputs/apk/full/release/*unsigned*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: MoonCat-TV-test-reports
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/

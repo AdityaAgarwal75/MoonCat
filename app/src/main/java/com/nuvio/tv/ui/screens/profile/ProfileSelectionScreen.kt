@@ -873,29 +873,9 @@ private fun ProfileSelectionBackground(
                 modifier = Modifier.fillMaxSize()
             )
             null -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0f to gradientTop,
-                                    0.42f to gradientMid,
-                                    1f to baseBg
-                                )
-                            )
-                        )
-                        .background(
-                            brush = Brush.horizontalGradient(
-                                colorStops = arrayOf(
-                                    0f to halfFadeStrong,
-                                    0.45f to halfFadeSoft,
-                                    0.72f to Color.Transparent,
-                                    1f to Color.Transparent
-                                )
-                            )
-                        )
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.mooncat_profiles_v102),
+                    contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop
                 )
             }
         }
@@ -932,7 +912,7 @@ private fun ProfileSelectionMainContent(
         MemberBrandWordmark(
             height = ProfileSelectionSpacing.LogoHeight,
             contentDescription = stringResource(R.string.cd_nuvio_logo),
-            drawableOverride = brandWordmarkRes
+            drawableOverride = R.drawable.mooncat_word_v102
         )
 
         Spacer(modifier = Modifier.height(ProfileSelectionSpacing.LogoToHeading))

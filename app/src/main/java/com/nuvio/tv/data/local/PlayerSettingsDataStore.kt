@@ -885,7 +885,7 @@ class PlayerSettingsDataStore @Inject constructor(
                     prefs[preferredAudioLanguageKey] ?: if (profileManager.activeProfileId.value == 1) "hi" else "en"
                 ),
                 secondaryPreferredAudioLanguage = prefs[secondaryPreferredAudioLanguageKey]
-                    ?.let(::normalizeSecondaryAudioLanguageCode),
+                    ?.let(::normalizeSecondaryAudioLanguageCode) ?: "en",
                 loadingOverlayEnabled = prefs[loadingOverlayEnabledKey] ?: true,
                 showPlayerLoadingStatus = prefs[showPlayerLoadingStatusKey] ?: true,
                 playbackIssueReportsEnabled = prefs[playbackIssueReportsEnabledKey] ?: false,

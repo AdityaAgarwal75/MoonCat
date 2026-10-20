@@ -27,7 +27,7 @@ internal fun MooncatLanguageSourceSearch(
         // Allow source fetching to start, then wait a bounded period for addon responses.
         delay(600)
         var waited = 0
-        while (waited < 15000 && latest.value.isLoadingSourceStreams) {
+        while (waited < 8000 && latest.value.isLoadingSourceStreams) {
             delay(250)
             waited += 250
         }
@@ -38,18 +38,19 @@ internal fun MooncatLanguageSourceSearch(
                     stream.getEffectiveInfoHash().equals(current.currentStreamInfoHash, ignoreCase = true) &&
                     stream.getEffectiveFileIdx() == current.currentStreamFileIdx)
         }
-        val hint = when (requested) {
-            "hi" -> Regex("(?i)(\\bhindi\\b|\\bhin\\b|🇮🇳)")
-            "en" -> Regex("(?i)(\\benglish\\b|\\beng\\b|🇬🇧|🇺🇸)")
-            else -> Regex("(?i)(\\bjapanese\\b|\\bjpn\\b|🇯🇵)")
+        // First use a track already exposed by the current file: no source reload.
+        val activeTracks = if (current.isServerStream) current.serverAudioTracks else current.audioTracks
+        AudioLanguageChoices.choices(activeTracks).firstOrNull { it.language == requested }?.let { track ->
+            onEvent(PlayerEvent.OnSelectAudioTrack(track.index))
+            onFinished()
+            return@LaunchedEffect
         }
-        val candidate = current.sourceAllStreams
-            .filter { stream ->
-                stream != originalSource && hint.containsMatchIn(listOfNotNull(stream.name, stream.title, stream.description).joinToString(" ")) &&
-                    stream.getStreamUrl() != current.currentStreamUrl &&
-                    MoonCatSourcePolicy.suitable(stream) && (stream.getStreamUrl() != null || stream.isTorrent())
-            }
-            .sortedBy(MoonCatSourcePolicy::qualityTier).firstOrNull()
+        val candidates = current.sourceAllStreams.filter { stream ->
+            stream != originalSource && MoonCatSourcePolicy.advertisesAudio(stream, requested) &&
+                MoonCatSourcePolicy.suitable(stream) && (stream.getStreamUrl() != null || stream.isTorrent())
+        }.distinctBy { it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }
+        val candidate = com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(candidates)
+            ?: MoonCatSourcePolicy.rank(candidates).firstOrNull()
         if (candidate == null) {
             notice("No source advertises ${languageName(requested)} audio. You can browse Sources.")
             onFinished()

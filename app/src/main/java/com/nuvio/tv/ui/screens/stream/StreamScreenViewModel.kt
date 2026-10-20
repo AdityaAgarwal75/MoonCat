@@ -926,9 +926,9 @@ class StreamScreenViewModel @Inject constructor(
             // - unlimited: check each addon response as it arrives; if a match
             //   is found use it immediately; otherwise keep waiting until all
             //   addons finish or the hard timeout (60s) forces a fallback.
-            val timeoutMs = playerSettings.streamAutoPlayTimeoutSeconds * 1_000L
-            if (PlayerSettings.isBoundedTimeout(playerSettings.streamAutoPlayTimeoutSeconds)) {
-                delay(timeoutMs)
+            val timeoutMs = (playerSettings.streamAutoPlayTimeoutSeconds * 1_000L).coerceIn(0L, 2500L)
+            if (playerSettings.streamAutoPlayTimeoutSeconds != 0) {
+                delay(if (isUnlimitedTimeout) 2500L else timeoutMs)
             }
             timeoutElapsed = true
             val directDebridLoadedByTimeout = !directDebridAvailable ||

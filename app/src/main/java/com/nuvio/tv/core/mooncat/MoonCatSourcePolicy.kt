@@ -5,7 +5,7 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("(?i)(2160p|4320p|480p|360p|240p|\\b4k\\b|\\b8k\\b|remux|hdcam|camrip|telesync|telecine|screener|\\bcam\\b|\\bscr\\b)")
+    private val excluded = Regex("""(?i)(2160p|4320p|480p|360p|240p|\b4k\b|\b8k\b|remux|hd[ ._-]*cam|cam[ ._-]*rip|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
         stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename).joinToString(" ")
@@ -29,27 +29,46 @@ object MoonCatSourcePolicy {
         return !excluded.containsMatchIn(text(stream)) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
 
-    /** Advertised language hints guide selection; the player must still verify real audio tracks. */
+    /** Explicit audio labels outrank unknown audio; subtitles never establish a dub. */
     fun forPreferredLanguage(streams: List<Stream>, language: String): List<Stream> {
-        val preferred = when (language.lowercase()) {
-            "hi", "hin", "hindi" -> "hi"
-            "en", "eng", "english" -> "en"
-            "ja", "jpn", "japanese" -> "ja"
-            else -> return streams
-        }
+        val preferred = normalizeLanguage(language) ?: "hi"
         val advertised = streams.filter { preferred in languageHints(it) }
-        // If no preferred release is advertised, try unlabelled releases rather than known other audio.
-        return advertised.ifEmpty { streams.filter { languageHints(it).isEmpty() } }
+        if (advertised.isNotEmpty()) return advertised
+        // Household fallback: English before unlabelled/original-language releases.
+        if (preferred == "hi") {
+            val english = streams.filter { "en" in languageHints(it) }
+            if (english.isNotEmpty()) return english
+        }
+        if (preferred == "en") {
+            val hindi = streams.filter { "hi" in languageHints(it) }
+            if (hindi.isNotEmpty()) return hindi
+        }
+        return streams.filter { languageHints(it).isEmpty() }
     }
 
-    private fun languageHints(stream: Stream): Set<String> {
-        val description = text(stream)
-        val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty().map { it.lowercase() }
+    fun normalizeLanguage(language: String): String? = when (language.lowercase().substringBefore('-').trim()) {
+        "hi", "hin", "hindi", "हिन्दी", "हिंदी" -> "hi"
+        "en", "eng", "english" -> "en"
+        "ja", "jpn", "japanese" -> "ja"
+        else -> null
+    }
+
+    fun advertisesAudio(stream: Stream, language: String): Boolean =
+        normalizeLanguage(language)?.let { it in languageHints(stream) } == true
+
+    fun languageHints(stream: Stream): Set<String> {
+        // A provider's structured audio list and filename are stronger than subtitle flags.
+        val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
+        val audioText = text(stream).lineSequence().map { line ->
+            line.replace(Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]\s*[^\n|;]+"""), " ")
+                .replace(Regex("""(?i)\b(?:hindi|hin|english|eng|japanese|jpn)\s+(?:subtitles?|subs?|subbed)\b"""), " ")
+        }.joinToString(" ")
         return buildSet {
-            if (Regex("(?i)(\\bhindi\\b|\\bhin\\b|🇮🇳)").containsMatchIn(description) || parsed.any { it in setOf("hi", "hin", "hindi") }) add("hi")
-            if (Regex("(?i)(\\benglish\\b|\\beng\\b|🇬🇧|🇺🇸)").containsMatchIn(description) || parsed.any { it in setOf("en", "eng", "english") }) add("en")
-            if (Regex("(?i)(\\bjapanese\\b|\\bjpn\\b|🇯🇵)").containsMatchIn(description) || parsed.any { it in setOf("ja", "jpn", "japanese") }) add("ja")
-            if (Regex("(?i)\\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\\b").containsMatchIn(description)) add("other")
+            parsed.forEach { normalizeLanguage(it)?.let(::add) }
+            if (Regex("""(?i)(\b(?:hindi|hin|hi)\b|हिन्दी|हिंदी|🇮🇳)""").containsMatchIn(audioText)) add("hi")
+            if (Regex("""(?i)(\b(?:english|eng|en)\b|🇬🇧|🇺🇸)""").containsMatchIn(audioText)) add("en")
+            if (Regex("""(?i)(\b(?:japanese|jpn|ja)\b|🇯🇵)""").containsMatchIn(audioText)) add("ja")
+            if (Regex("""(?i)\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\b""").containsMatchIn(audioText)) add("other")
             if (parsed.isNotEmpty() && isEmpty()) add("other")
         }
     }
