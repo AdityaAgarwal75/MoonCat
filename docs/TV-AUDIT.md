@@ -21,6 +21,7 @@ Repository-wide inventory, source/build configuration review and Android compila
 | Rapid News selections could launch an earlier channel later | Cancel the previous job/HTTP call, inspect a bounded playlist prefix and close responses. |
 | Failed provider chips disappeared | Keep unavailable sources visible until refresh for diagnosis. |
 | More sources requested | Add Comet and official YouTube connectors, bootstrap descriptors and one-time profile migration. Playback is not guaranteed; see SOURCES.md. |
+| Updater could select another package or an incompatible signing key | Filter Preview assets separately and verify downloaded package, version and certificate against the installed app before installation. |
 | Repository branding and docs lagged app assets | Use the current violet logo and rewrite README/build/signing guidance. |
 | Multiple workflows imported old source or reassembled split binaries | One source-build workflow; old examples archived as text. Remove APK chunks, stale overlays and editor metadata from the current tree. Git history retains prior versions. |
 

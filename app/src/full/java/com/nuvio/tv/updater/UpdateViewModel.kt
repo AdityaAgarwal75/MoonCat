@@ -245,7 +245,11 @@ class UpdateViewModel @Inject constructor(
                 }
             }
 
-            result
+            val verifiedResult = result.mapCatching { file ->
+                withContext(Dispatchers.IO) { ApkInstaller.validateDownloadedUpdate(context, file) }
+                file
+            }
+            verifiedResult
                 .onSuccess { file ->
                     _uiState.update {
                         it.copy(
@@ -290,7 +294,14 @@ class UpdateViewModel @Inject constructor(
         }
 
         _uiState.update { it.copy(showUnknownSourcesDialog = false) }
-        ApkInstaller.launchInstall(context, apkFile)
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { ApkInstaller.validateDownloadedUpdate(context, apkFile) }
+                ApkInstaller.launchInstall(context, apkFile)
+            }.onFailure { error ->
+                _uiState.update { it.copy(downloadedApkPath = null, errorMessage = error.message, showBanner = true) }
+            }
+        }
     }
 
     fun openUnknownSourcesSettings() {

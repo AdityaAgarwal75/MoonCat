@@ -2,6 +2,9 @@ package com.nuvio.tv.updater
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import java.security.MessageDigest
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -30,6 +33,29 @@ object ApkInstaller {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun identity(info: PackageInfo): ApkUpdateIdentity {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.signingInfo?.apkContentsSigners
+            else info.signatures
+        return ApkUpdateIdentity(info.packageName,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong(),
+            signatures.orEmpty().map { signature ->
+                MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+                    .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            }.toSet())
+    }
+
+    @Suppress("DEPRECATION")
+    fun validateDownloadedUpdate(context: Context, apkFile: File) {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES
+            else PackageManager.GET_SIGNATURES
+        val installed = context.packageManager.getPackageInfo(context.packageName, flags)
+        val downloaded = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            ?: error("Downloaded APK could not be read. Retry the download.")
+        validateApkUpdate(identity(installed), identity(downloaded))
+    }
+
+    /** Caller validates the archive on an IO dispatcher before opening Android's installer. */
     fun launchInstall(context: Context, apkFile: File) {
         val authority = "${BuildConfig.APPLICATION_ID}.fileprovider"
         val uri = FileProvider.getUriForFile(context, authority, apkFile)
