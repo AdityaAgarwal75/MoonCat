@@ -359,10 +359,27 @@ fun ProfileSelectionScreen(
             onProfileThemeFocused?.invoke(theme)
         }
 
-        ProfileSelectionBackground(
-            focusedAvatarColor = overlayProfileColor ?: focusedAvatarColor,
-            profileBackground = profileBackground
-        )
+        if (profileBackground != null) {
+            // User-selected artwork stays in place.
+            ProfileSelectionBackground(
+                focusedAvatarColor = overlayProfileColor ?: focusedAvatarColor,
+                profileBackground = profileBackground
+            )
+        } else {
+            // Default profile-picker background matches the moonlit TV splash.
+            // Unlike a poster screenshot, this remains a genuine interactive UI.
+            Box(
+                modifier = Modifier.fillMaxSize().background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFF060917),
+                            Color(0xFF15182F),
+                            Color(0xFF080D20)
+                        )
+                    )
+                )
+            )
+        }
 
         AnimatedContent(
             targetState = pinOverlayState,
@@ -856,29 +873,9 @@ private fun ProfileSelectionBackground(
                 modifier = Modifier.fillMaxSize()
             )
             null -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0f to gradientTop,
-                                    0.42f to gradientMid,
-                                    1f to baseBg
-                                )
-                            )
-                        )
-                        .background(
-                            brush = Brush.horizontalGradient(
-                                colorStops = arrayOf(
-                                    0f to halfFadeStrong,
-                                    0.45f to halfFadeSoft,
-                                    0.72f to Color.Transparent,
-                                    1f to Color.Transparent
-                                )
-                            )
-                        )
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(R.drawable.mooncat_profiles_v102),
+                    contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
             }
         }
@@ -915,7 +912,7 @@ private fun ProfileSelectionMainContent(
         MemberBrandWordmark(
             height = ProfileSelectionSpacing.LogoHeight,
             contentDescription = stringResource(R.string.cd_nuvio_logo),
-            drawableOverride = brandWordmarkRes
+            drawableOverride = R.drawable.mooncat_word_v102
         )
 
         Spacer(modifier = Modifier.height(ProfileSelectionSpacing.LogoToHeading))

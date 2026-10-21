@@ -1,6 +1,7 @@
 package com.nuvio.tv.updater
 
 import android.os.Build
+import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.data.remote.dto.GitHubAssetDto
 
 internal object AbiSelector {
@@ -12,8 +13,12 @@ internal object AbiSelector {
         "x86"
     )
 
-    fun chooseBestApkAsset(assets: List<GitHubAssetDto>): GitHubAssetDto? {
-        val apkAssets = assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+    fun chooseBestApkAsset(assets: List<GitHubAssetDto>, applicationId: String = BuildConfig.APPLICATION_ID): GitHubAssetDto? {
+        val wantsPreview = applicationId.endsWith(".preview")
+        val apkAssets = assets.filter {
+            it.name.endsWith(".apk", ignoreCase = true) && !it.name.contains("mobile", ignoreCase = true) &&
+                it.name.contains("preview", ignoreCase = true) == wantsPreview
+        }
         if (apkAssets.isEmpty()) return null
         if (apkAssets.size == 1) return apkAssets.first()
 

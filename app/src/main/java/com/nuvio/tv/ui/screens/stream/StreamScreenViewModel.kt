@@ -55,7 +55,11 @@ import com.nuvio.tv.ui.util.localizedGenreLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -114,7 +118,6 @@ class StreamScreenViewModel @Inject constructor(
     private var streamLoadJob: Job? = null
     private var streamLoadScope: kotlinx.coroutines.CoroutineScope? = null
     private var streamLoadCompleted = false
-    private var sourceChipErrorDismissJob: Job? = null
     private var pendingCacheSaveJob: Job? = null
     private var streamBadgePresentationJob: Job? = null
     private var streamFilterExpandJob: Job? = null
@@ -130,7 +133,6 @@ class StreamScreenViewModel @Inject constructor(
         context.getString(R.string.stream_embedded_fallback_name)
     }
 
-    private val videoId: String = savedStateHandle["videoId"] ?: ""
     private val contentType: String = savedStateHandle["contentType"] ?: ""
     private val title: String = savedStateHandle["title"] ?: ""
     private val poster: String? = savedStateHandle.getOptionalString("poster")
@@ -138,6 +140,9 @@ class StreamScreenViewModel @Inject constructor(
     private val logo: String? = savedStateHandle.getOptionalString("logo")
     private val season: Int? = savedStateHandle.get<String>("season")?.toIntOrNull()
     private val episode: Int? = savedStateHandle.get<String>("episode")?.toIntOrNull()
+    private val videoId: String = com.nuvio.tv.core.streams.addonVideoId(
+        contentType, savedStateHandle["videoId"] ?: "", season, episode
+    )
     private val episodeName: String? = savedStateHandle.getOptionalString("episodeName")
     private val runtime: Int? = savedStateHandle.get<String>("runtime")?.toIntOrNull()
     private val genres: String? = savedStateHandle.getOptionalString("genres")
@@ -386,7 +391,6 @@ class StreamScreenViewModel @Inject constructor(
         if (forceRefresh || _uiState.value.addonStreams.isEmpty()) {
             badgedAddonNames = emptySet()
         }
-        sourceChipErrorDismissJob?.cancel()
         val newScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob())
         streamLoadScope = newScope
         streamLoadJob = newScope.launch {
@@ -450,7 +454,10 @@ class StreamScreenViewModel @Inject constructor(
                     contentKey = streamCacheKey,
                     maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
                 )
-                if (cached != null) {
+                if (cached != null && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.reusableRelease(
+                        cached.streamName, cached.filename, cached.videoSize, playerSettings.preferredAudioLanguage,
+                        if (season != null) 2_000_000_000L else 7_000_000_000L
+                    )) {
                     autoPlayHandledForSession = true
                     resolvedAutoPlayTarget = true
                     val isCachedTorrent = cached.infoHash != null && cached.url.isNullOrBlank()
@@ -524,6 +531,7 @@ class StreamScreenViewModel @Inject constructor(
                 contentId?.let { bingeGroupCacheDataStore.getInfoHash(it) }
             } else null
 
+            var sourceRaceInProgress = false
             suspend fun applySuccess(addonStreamGroups: List<AddonStreams>, isAllLoaded: Boolean) {
                 val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(
                     addonStreamGroups,
@@ -554,81 +562,59 @@ class StreamScreenViewModel @Inject constructor(
                     }
                 }
 
-                val allStreams = mergedAddonStreams.flatMap { it.streams }.filter {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                        it, if (season != null) 2_000_000_000L else 7_000_000_000L
+                // Parsing and sorting hundreds of provider results must not block TV focus frames.
+                val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
+                    val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
+                            it, if (season != null) 2_000_000_000L else 7_000_000_000L
+                        )
+                    }
+                    compatible to com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
+                        compatible, playerSettings.preferredAudioLanguage
                     )
                 }
-                val autoPlayStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.forPreferredLanguage(
-                    allStreams, playerSettings.preferredAudioLanguage
-                )
                 val availableAddons = mergedAddonStreams.map { it.addonName }
 
-                // Early binge group match: if we have a persisted binge group, try to
-                // match it immediately on every emission without waiting for all addons.
-                // When a persisted filename is available, prefer binge group + filename first.
-                val earlyBingeGroupMatch = if (!autoPlayHandledForSession && !resolvedAutoPlayTarget && persistedBingeGroup != null) {
-                    val nextFilename = if (persistedFilename != null) {
-                        val extracted = com.nuvio.tv.core.player.FilenameEpisodeMatcher.extractSeasonEpisode(persistedFilename)
-                        if (extracted != null) {
-                            com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
-                                filename = persistedFilename,
-                                currentSeason = extracted.first,
-                                currentEpisode = extracted.second,
-                                nextSeason = season,
-                                nextEpisode = episode ?: 0
-                            ) ?: persistedFilename
-                        } else {
-                            // No episode pattern (e.g. movie) — match the exact filename.
-                            persistedFilename
-                        }
-                    } else null
-                    // Try binge group + filename first
-                    val bingeAndFilename = if (nextFilename != null) {
-                        autoPlayStreams.firstOrNull { stream ->
-                            !stream.isExternal() &&
-                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(stream, if (season != null) 2_000_000_000L else 7_000_000_000L) &&
-                                stream.behaviorHints?.bingeGroup == persistedBingeGroup &&
-                                com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(
-                                    stream.behaviorHints?.filename, nextFilename
-                                )
-                        }
-                    } else null
-                    // Try binge group + infoHash when filename match failed or was unavailable
-                    val bingeAndInfoHash = if (bingeAndFilename == null && persistedInfoHash != null) {
-                        autoPlayStreams.firstOrNull { stream ->
-                            !stream.isExternal() &&
-                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(stream, if (season != null) 2_000_000_000L else 7_000_000_000L) &&
-                                stream.behaviorHints?.bingeGroup == persistedBingeGroup &&
-                                stream.infoHash?.equals(persistedInfoHash, ignoreCase = true) == true
-                        }
-                    } else null
-                    // Fall back to binge group alone
-                    bingeAndFilename ?: bingeAndInfoHash ?: StreamAutoPlaySelector.selectAutoPlayStream(
-                        streams = autoPlayStreams,
+                // Present available choices before awaiting any HTTP/torrent readiness race.
+                updateUiStateIfChanged { state ->
+                    val visible = if (state.selectedAddonFilter == null) allStreams
+                        else allStreams.filter { it.addonName == state.selectedAddonFilter }
+                    streamFilterFullList = visible
+                    val pageEnd = state.filteredStreams.size.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(visible.size)
+                    state.copy(isLoading = false, addonStreams = mergedAddonStreams,
+                        allStreams = allStreams, filteredStreams = visible.take(pageEnd),
+                        availableAddons = availableAddons,
+                        sourceChips = mergeSourceChipStatuses(state.sourceChips, availableAddons), error = null)
+                }
+
+                // Auto-select only after all addons have responded or the
+                // configured timeout has elapsed. This gives slower addons a
+                // chance to return higher-quality streams before the selector
+                // picks from whatever is available.
+                val preferredHdHttp = autoPlayStreams.filter {
+                    !it.isTorrent() && it.getStreamUrl() != null &&
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(it, playerSettings.preferredAudioLanguage) == 0 &&
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.qualityTier(it) == 0
+                }
+                val canProbeEarly = !isAllLoaded && preferredHdHttp.isNotEmpty() &&
+                    playerSettings.streamAutoPlayMode != StreamAutoPlayMode.MANUAL &&
+                    StreamAutoPlaySelector.selectAutoPlayStream(
+                        streams = preferredHdHttp,
                         mode = playerSettings.streamAutoPlayMode,
                         regexPattern = playerSettings.streamAutoPlayRegex,
                         source = playerSettings.streamAutoPlaySource,
                         installedAddonNames = installedAddonOrder.toSet(),
                         selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
                         selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                        preferredBingeGroup = persistedBingeGroup,
-                        preferBingeGroupInSelection = true,
-                        bingeGroupOnly = true
-                    )
-                } else null
-
-                // Auto-select only after all addons have responded or the
-                // configured timeout has elapsed. This gives slower addons a
-                // chance to return higher-quality streams before the selector
-                // picks from whatever is available.
-                val shouldAutoSelect = !autoPlayHandledForSession && !resolvedAutoPlayTarget && isAllLoaded
-                val selectedAutoPlayStream = if (earlyBingeGroupMatch != null) {
-                    earlyBingeGroupMatch
-                } else if (!shouldAutoSelect) {
+                        preferredAudioLanguage = playerSettings.preferredAudioLanguage
+                    ) != null
+                val shouldAutoSelect = !autoPlayHandledForSession && !resolvedAutoPlayTarget &&
+                    !sourceRaceInProgress && (isAllLoaded || canProbeEarly)
+                val selectedAutoPlayStream = if (!shouldAutoSelect) {
                     null
                 } else {
                     fun pick(remaining: List<Stream>) = StreamAutoPlaySelector.selectAutoPlayStream(
+                        preferredAudioLanguage = playerSettings.preferredAudioLanguage,
                         streams = remaining,
                         mode = playerSettings.streamAutoPlayMode,
                         regexPattern = playerSettings.streamAutoPlayRegex,
@@ -641,12 +627,50 @@ class StreamScreenViewModel @Inject constructor(
                     )
                     val remaining = autoPlayStreams.toMutableList()
                     val candidates = mutableListOf<Stream>()
-                    repeat(com.nuvio.tv.core.mooncat.MoonCatSourceRace.MAX_CANDIDATES) {
-                        val candidate = pick(remaining) ?: return@repeat
-                        candidates.add(candidate)
+                    val identities = mutableSetOf<String>()
+                    while (candidates.size < com.nuvio.tv.core.mooncat.MoonCatSourceRace.MAX_CANDIDATES) {
+                        val pool = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.probePool(
+                            remaining, candidates.size, playerSettings.preferredAudioLanguage)
+                        val candidate = pick(pool) ?: pick(remaining) ?: break
                         remaining.remove(candidate)
+                        val identity = candidate.getStreamUrl()
+                            ?: candidate.getEffectiveInfoHash()?.let { "$it:${candidate.getEffectiveFileIdx()}" }
+                            ?: candidate.stableKey()
+                        if (identities.add(identity)) candidates.add(candidate)
                     }
-                    com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(candidates)
+                    sourceRaceInProgress = true
+                    try {
+                        coroutineScope {
+                            val http = async {
+                                com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(
+                                    candidates.filter { !it.isTorrent() }, playerSettings.preferredAudioLanguage
+                                )
+                            }
+                            val torrent = async {
+                                if (candidates.none { it.isTorrent() }) null else try {
+                                    torrentService.chooseReadySource(
+                                        candidates, if (season != null) 2_000_000_000L else 7_000_000_000L,
+                                        playerSettings.preferredAudioLanguage
+                                    )
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (_: Exception) { null }
+                            }
+                            val httpWinner = http.await()
+                            if (httpWinner != null &&
+                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(httpWinner, playerSettings.preferredAudioLanguage) == 0 &&
+                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.qualityTier(httpWinner) == 0) {
+                                // A verified preferred-language HD URL need not wait for a slower swarm.
+                                torrent.cancel()
+                                return@coroutineScope httpWinner
+                            }
+                            val ready = listOfNotNull(httpWinner, torrent.await()) + candidates.filter {
+                                it.serverTarget != null || it.isDirectDebrid() || it.isYouTube()
+                            }
+                            com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
+                                ready, playerSettings.preferredAudioLanguage
+                            ).firstOrNull()
+                        }
+                    } finally { sourceRaceInProgress = false }
                 }
                 if (selectedAutoPlayStream != null) {
                     resolvedAutoPlayTarget = true
@@ -660,12 +684,8 @@ class StreamScreenViewModel @Inject constructor(
                 }
                 streamFilterFullList = fullFiltered
                 val currentPageSize = _uiState.value.filteredStreams.size
-                val isFirstLoad = currentPageSize == 0
-                val paginatedStreams = if (isFirstLoad && fullFiltered.size > STREAM_FILTER_PAGE_SIZE) {
-                    fullFiltered.subList(0, STREAM_FILTER_PAGE_SIZE)
-                } else {
-                    fullFiltered
-                }
+                val pageEnd = currentPageSize.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(fullFiltered.size)
+                val paginatedStreams = fullFiltered.take(pageEnd)
 
                 updateUiStateIfChanged {
                     it.copy(
@@ -828,43 +848,6 @@ class StreamScreenViewModel @Inject constructor(
                                         }
                                     }
                                 }
-                            } else if (directFlowActive && persistedBingeGroup != null) {
-                                // Before timeout: eagerly check binge group only
-                                // (no fallback to FIRST_STREAM/REGEX yet). If a
-                                // match is found we can start playback immediately
-                                // without waiting for the full timeout.
-                                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(
-                                    result.data, installedAddonOrder, preferredServerNames
-                                )
-                                val allStreams = orderedStreams.flatMap { it.streams }.filter {
-                                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                                        it, if (season != null) 2_000_000_000L else 7_000_000_000L
-                                    )
-                                }
-                                val earlyMatch = StreamAutoPlaySelector.selectAutoPlayStream(
-                                    streams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.forPreferredLanguage(
-                                        allStreams, playerSettings.preferredAudioLanguage
-                                    ),
-                                    mode = playerSettings.streamAutoPlayMode,
-                                    regexPattern = playerSettings.streamAutoPlayRegex,
-                                    source = playerSettings.streamAutoPlaySource,
-                                    installedAddonNames = installedAddonOrder.toSet(),
-                                    selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                                    selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                                    preferredBingeGroup = persistedBingeGroup,
-                                    preferBingeGroupInSelection = true,
-                                    bingeGroupOnly = true
-                                )
-                                if (earlyMatch != null) {
-                                    resolvedAutoPlayTarget = true
-                                    autoSelectTriggered = true
-                                    updateUiStateIfChanged {
-                                        it.copy(
-                                            autoPlayStream = earlyMatch,
-                                            showDirectAutoPlayOverlay = true
-                                        )
-                                    }
-                                }
                             }
                         }
                         is NetworkResult.Error -> {
@@ -918,6 +901,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
+            // Wait for all providers where possible; the user's bounded preference still applies.
             // Timeout semantics:
             // - 0 (instant): timeoutElapsed immediately, first addon response
             //   triggers auto-select; if no match -> dismiss overlay at once.
@@ -926,9 +910,9 @@ class StreamScreenViewModel @Inject constructor(
             // - unlimited: check each addon response as it arrives; if a match
             //   is found use it immediately; otherwise keep waiting until all
             //   addons finish or the hard timeout (60s) forces a fallback.
-            val timeoutMs = playerSettings.streamAutoPlayTimeoutSeconds * 1_000L
-            if (PlayerSettings.isBoundedTimeout(playerSettings.streamAutoPlayTimeoutSeconds)) {
-                delay(timeoutMs)
+            val timeoutMs = (playerSettings.streamAutoPlayTimeoutSeconds * 1_000L).coerceIn(0L, 8_000L)
+            if (playerSettings.streamAutoPlayTimeoutSeconds != 0) {
+                delay(if (isUnlimitedTimeout) 8_000L else timeoutMs)
             }
             timeoutElapsed = true
             val directDebridLoadedByTimeout = !directDebridAvailable ||
@@ -1138,11 +1122,9 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     private fun markRemainingSourceChipsAsError() {
-        var markedAnyError = false
         updateUiStateIfChanged { state ->
             val hasPending = state.sourceChips.any { it.status == SourceChipStatus.LOADING }
             if (!hasPending) return@updateUiStateIfChanged state
-            markedAnyError = true
             state.copy(
                 sourceChips = state.sourceChips.map { chip ->
                     if (chip.status == SourceChipStatus.LOADING) {
@@ -1153,20 +1135,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             )
         }
-        if (markedAnyError) {
-            scheduleErrorChipRemoval()
-        }
-    }
-
-    private fun scheduleErrorChipRemoval() {
-        sourceChipErrorDismissJob?.cancel()
-        sourceChipErrorDismissJob = viewModelScope.launch {
-            delay(1600L)
-            updateUiStateIfChanged { state ->
-                val remaining = state.sourceChips.filterNot { it.status == SourceChipStatus.ERROR }
-                if (remaining.size == state.sourceChips.size) state else state.copy(sourceChips = remaining)
-            }
-        }
+        // Keep unavailable sources visible until retry, rather than hiding the diagnosis.
     }
 
     private fun com.nuvio.tv.domain.model.Addon.supportsStreamResourceForChip(type: String): Boolean {
@@ -1638,7 +1607,6 @@ class StreamScreenViewModel @Inject constructor(
         streamLoadScope?.cancel()
         streamLoadScope = null
         streamLoadJob = null
-        sourceChipErrorDismissJob?.cancel()
     }
 
     /**

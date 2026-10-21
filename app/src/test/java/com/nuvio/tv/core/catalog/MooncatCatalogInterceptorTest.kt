@@ -70,4 +70,31 @@ class MooncatCatalogInterceptorTest {
         assertTrue(streams.catalogs.isEmpty())
     }
 
+    @Test fun hindiDubbedShelfUsesRegionalProviderWithPagination() {
+        var providerUrl = ""
+        client("{\"metas\":[]}") { providerUrl = it }.newCall(Request.Builder()
+            .url("https://catalog.mooncat.local/hi/catalog/movie/hindi-dubbed/skip=20.json").build()).execute().use {
+            assertEquals(200, it.code)
+            assertTrue(providerUrl.endsWith("/catalog/movie/hindi_dubbed/skip=20.json"))
+        }
+    }
+
+    @Test fun newSourcesDoNotDependOnManifestFetchBeforeEpisodeSearch() {
+        val comet = MooncatCatalogInterceptor.bootstrapManifest("https://comet.elfhosted.com")!!
+        assertTrue(comet.resources.any { it.name == "stream" && "series" in it.types })
+        assertTrue(comet.catalogs.isEmpty())
+        val youtube = MooncatCatalogInterceptor.bootstrapManifest("https://v3-channels.strem.io")!!
+        assertTrue(youtube.catalogs.any { it.type == com.nuvio.tv.domain.model.ContentType.CHANNEL })
+        assertFalse(youtube.resources.any { it.name == "stream" })
+        assertTrue(youtube.resources.any { it.name == "meta" })
+    }
+
+    @Test fun freeProvidersBootstrapAsStreamOnlyWithoutDuplicatingHomeCatalogues() {
+        listOf("https://torrentsdb.com", "https://hdhub.thevolecitor.qzz.io").forEach { url ->
+            val addon = MooncatCatalogInterceptor.bootstrapManifest(url)!!
+            assertTrue(addon.resources.any { it.name == "stream" && "tt" in it.idPrefixes.orEmpty() })
+            assertTrue(addon.catalogs.isEmpty())
+        }
+    }
+
 }

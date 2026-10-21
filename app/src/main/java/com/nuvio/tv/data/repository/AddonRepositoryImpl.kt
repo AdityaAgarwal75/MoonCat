@@ -307,7 +307,11 @@ class AddonRepositoryImpl(
 
         return when (val result = safeApiCall(context) { api.getManifest(manifestUrl) }) {
             is NetworkResult.Success -> {
-                val addon = result.data.toDomain(cleanBaseUrl)
+                val addon = result.data.toDomain(cleanBaseUrl).let { manifest ->
+                    if (cleanBaseUrl in setOf("https://mediafusion.elfhosted.com", "https://torrentsdb.com", "https://hdhub.thevolecitor.qzz.io")) {
+                        manifest.copy(catalogs = emptyList())
+                    } else manifest
+                }
                 if (putCachedManifestIfChanged(cleanBaseUrl, addon)) {
                     Log.d(TAG, "Updated addon manifest cache url=$cleanBaseUrl version=${addon.version} configVersion=${addon.configVersion}")
                 }

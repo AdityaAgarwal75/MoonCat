@@ -82,6 +82,7 @@ fun truthy(value: String?): Boolean {
 
 val buildingAppBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
 val useDebugReleaseSigning = env("CI_USE_DEBUG_SIGNING").equals("true", ignoreCase = true)
+val useUnsignedRelease = env("CI_UNSIGNED_RELEASE").equals("true", ignoreCase = true)
 val useLocalFfmpegDecoder = truthy(
     providers.gradleProperty("useLocalFfmpegDecoder").orNull
         ?: env("USE_LOCAL_FFMPEG_DECODER")
@@ -102,13 +103,14 @@ android {
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "dev.mooncat.tv"
+        applicationId = if (providers.gradleProperty("mooncatPreview").orNull == "true") "dev.mooncat.tv.preview" else "dev.mooncat.tv"
+        manifestPlaceholders["mooncatAppLabel"] = if (providers.gradleProperty("mooncatPreview").orNull == "true") "MoonCat Preview" else "@string/app_name"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 24
-        ndk { abiFilters += listOf("armeabi-v7a") }
+        ndk { abiFilters += listOf(providers.gradleProperty("mooncatAbi").orElse("armeabi-v7a").get()) }
         targetSdk = 36
-        versionCode = 10001
-        versionName = "1.0.0"
+        versionCode = 10007
+        versionName = "1.0.6"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
@@ -195,7 +197,9 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // GitHub-hosted CI uses its own debug key; installed releases retain
+            // MoonCat's original signing identity.
+            signingConfig = if (useDebugReleaseSigning) signingConfigs.getByName("debug") else signingConfigs.getByName("release")
             isDebuggable = parseBooleanProperty(providers.gradleProperty("debuggable").orNull)
             isMinifyEnabled = false
 
@@ -228,10 +232,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (useDebugReleaseSigning) {
-                signingConfigs.getByName("debug")
-            } else {
-                signingConfigs.getByName("release")
+            signingConfig = when {
+                useUnsignedRelease -> null // Sign on the trusted VPS after GitHub compiles the unsigned release.
+                useDebugReleaseSigning -> signingConfigs.getByName("debug")
+                else -> signingConfigs.getByName("release")
             }
 
             buildConfigField("boolean", "IS_DEBUG_BUILD", "false")
@@ -351,8 +355,6 @@ afterEvaluate {
 
 composeCompiler {
     // Enable Compose compiler metrics for performance analysis
-    metricsDestination = layout.buildDirectory.dir("compose_metrics")
-    reportsDestination = layout.buildDirectory.dir("compose_reports")
     stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose_stability_config.conf"))
 }
 

@@ -26,4 +26,5 @@ dependencyResolutionManagement {
 rootProject.name = "My Application"
 include(":app")
 include(":baselineprofile")
+include(":mobile")
 // Prebuilt FFmpeg decoder is included by app; no local NDK build required.

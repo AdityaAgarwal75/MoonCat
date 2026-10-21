@@ -127,13 +127,13 @@ class StreamAutoPlaySelectorTest {
         val regexMatch = stream(
             addonName = "AddonB",
             url = "https://example.com/b.m3u8",
-            name = "2160p Remux"
+            name = "1080p BluRay"
         )
 
         val selected = StreamAutoPlaySelector.selectAutoPlayStream(
             streams = listOf(nonMatch, regexMatch),
             mode = StreamAutoPlayMode.REGEX_MATCH,
-            regexPattern = "2160p|Remux",
+            regexPattern = "1080p|BluRay",
             source = StreamAutoPlaySource.ALL_SOURCES,
             installedAddonNames = setOf("AddonA", "AddonB"),
             selectedAddons = emptySet(),

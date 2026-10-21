@@ -192,6 +192,7 @@ fun MooncatStudiosScreen(onOpen: (MooncatTitle) -> Unit) {
 
 @Composable
 private fun StudioPoster(work: MooncatTitle, onOpen: (MooncatTitle) -> Unit) {
-    ContentCard(item = work.preview(), posterCardStyle = PosterCardStyle(width = 118.dp, height = 177.dp),
+    val preview = remember(work) { work.preview() }
+    ContentCard(item = preview, posterCardStyle = PosterCardStyle(width = 118.dp, height = 177.dp),
         showImdbRatings = false, onClick = { onOpen(work) })
 }

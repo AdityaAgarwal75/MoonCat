@@ -18,6 +18,7 @@ import io.mockk.every
 import io.mockk.mockk
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -109,7 +110,7 @@ class TraktProgressServiceRefreshTest {
         playbackHangs = true
         val cancelled = async { service.refreshRemoteSnapshot() }
         waitUntil { playbackCalls.get() >= 1 }
-        cancelled.cancel()
+        cancelled.cancelAndJoin()
         playbackHangs = false
 
         resetCounters()

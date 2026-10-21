@@ -61,10 +61,14 @@ local-assets/supporter-profile-backgrounds/
 logs
 AGENTS.md
 /PR.md
-docs/
 status-page/
 
 # MoonCat private local signing and generated packages
 *.jks
 *.keystore
 *.apk
+
+# Editor state and release binaries belong outside source control
+.idea/
+*.code-workspace
+mooncat/apk-parts/

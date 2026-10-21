@@ -2,6 +2,7 @@ package com.nuvio.tv.data.local
 
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import com.nuvio.tv.core.profile.ProfileManager
@@ -80,6 +81,22 @@ class AddonPreferences @Inject constructor(
             preferences[addonEnabledStatesKey]
                 ?.let(::parseEnabledStateMap)
                 .orEmpty()
+        }
+    }
+
+    suspend fun installMooncatProviderOnce() {
+        // Profiles can use independent addon lists. Migrate each existing list once,
+        // retaining removals and disabled states on every later startup.
+        val marker = booleanPreferencesKey("mooncat_sources_added_v106")
+        profileManager.profiles.value.map { it.id }.ifEmpty { listOf(1) }.forEach { profileId ->
+            store(profileId).edit { prefs ->
+                if (prefs[marker] == true) return@edit
+                val urls = getCurrentList(prefs, profileId)
+                val providers = listOf("https://comet.elfhosted.com", "https://v3-channels.strem.io")
+                val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
+                if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
+                prefs[marker] = true
+            }
         }
     }
 
@@ -179,12 +196,12 @@ class AddonPreferences @Inject constructor(
         }
     }
 
-    private fun getCurrentList(preferences: Preferences): List<String> {
+    private fun getCurrentList(preferences: Preferences, profileId: Int = effectiveProfileId()): List<String> {
         val json = preferences[orderedUrlsKey]
         return if (json != null) {
             parseUrlList(json)
         } else {
-            val legacySet = preferences[legacyUrlsKey] ?: getDefaultAddons()
+            val legacySet = preferences[legacyUrlsKey] ?: getDefaultAddons(profileId)
             legacySet.toList()
         }
     }
@@ -243,6 +260,11 @@ class AddonPreferences @Inject constructor(
         "https://v3-cinemeta.strem.io",
         "https://opensubtitles-v3.strem.io",
         "https://anime-kitsu.strem.fun",
+        "https://v3-channels.strem.io",
+        "https://comet.elfhosted.com",
+        "https://mediafusion.elfhosted.com",
+        "https://torrentsdb.com",
+        "https://hdhub.thevolecitor.qzz.io",
         if (profileId == 1) "https://torrentio.strem.fun/language=hindi"
         else "https://torrentio.strem.fun/language=english"
     )

@@ -5,10 +5,26 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("(?i)(2160p|4320p|480p|360p|240p|\\b4k\\b|\\b8k\\b|remux|hdcam|camrip|telesync|telecine|screener|\\bcam\\b|\\bscr\\b)")
+    private val excluded = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b|remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
+    private val ultraHd = Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""")
+    private val subtitleSuffix = Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+""")
+    private val subtitlePrefix = Regex("""(?i)\b(?:hindi|hin|english|eng|japanese|jpn)\s+(?:subtitles?|subs?|subbed)\b""")
+    private val hindiAudio = Regex("""(?i)(\b(?:hindi|hin|hi)\b|हिन्दी|हिंदी|🇮🇳)""")
+    private val englishAudio = Regex("""(?i)(\b(?:english|eng|en)\b|🇬🇧|🇺🇸)""")
+    private val japaneseAudio = Regex("""(?i)(\b(?:japanese|jpn|ja)\b|🇯🇵)""")
+    private val otherAudio = Regex("""(?i)\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\b""")
+    private val cleanRelease = Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""")
+    private val webRelease = Regex("""(?i)\b(?:web[ ._-]?rip|hdtv)\b""")
+    private val seederIcon = Regex("""(?:👤|👥|🌱)\s*(\d[\d,]*)""")
+    private val seederLabel = Regex("""(?i)\b(?:seeders?|seeds?)\s*[:=]?\s*(\d[\d,]*)""")
+    private val sdResolution = Regex("""(?i)\b(?:576|540|480|360|240)p\b""")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
-        stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename).joinToString(" ")
+        stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename,
+        stream.clientResolve?.stream?.raw?.torrentName, stream.clientResolve?.stream?.raw?.filename,
+        stream.clientResolve?.stream?.raw?.parsed?.rawTitle,
+        stream.clientResolve?.stream?.raw?.parsed?.resolution,
+        stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
     fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize
         ?: stream.clientResolve?.stream?.raw?.size
@@ -26,30 +42,59 @@ object MoonCatSourcePolicy {
     fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES): Boolean {
         val episode = stream.clientResolve?.let { it.season != null || it.episode != null || it.mediaType == "series" } == true
         val limit = if (episode) minOf(2_000_000_000L, maxFileBytes) else maxFileBytes
-        return !excluded.containsMatchIn(text(stream)) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
+        val unknownUltraHd = qualityTier(stream) == 3 &&
+            ultraHd.containsMatchIn(text(stream))
+        return stream.qualityValue <= 1080 && !unknownUltraHd && !excluded.containsMatchIn(text(stream)) &&
+            (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
 
-    /** Advertised language hints guide selection; the player must still verify real audio tracks. */
+    fun reusableRelease(name: String, filename: String?, size: Long?, preferredLanguage: String, maxFileBytes: Long): Boolean {
+        val cached = Stream(name = name, title = filename, description = null, url = null, ytId = null,
+            infoHash = null, fileIdx = null, externalUrl = null, behaviorHints = null, addonName = "Cached", addonLogo = null)
+        return suitable(cached, maxFileBytes) && (size == null || size in 1..maxFileBytes) &&
+            advertisesAudio(cached, normalizeLanguage(preferredLanguage) ?: "hi")
+    }
+
+    /** Explicit audio labels outrank unknown audio; subtitles never establish a dub. */
     fun forPreferredLanguage(streams: List<Stream>, language: String): List<Stream> {
-        val preferred = when (language.lowercase()) {
-            "hi", "hin", "hindi" -> "hi"
-            "en", "eng", "english" -> "en"
-            "ja", "jpn", "japanese" -> "ja"
-            else -> return streams
-        }
+        val preferred = normalizeLanguage(language) ?: "hi"
         val advertised = streams.filter { preferred in languageHints(it) }
-        // If no preferred release is advertised, try unlabelled releases rather than known other audio.
-        return advertised.ifEmpty { streams.filter { languageHints(it).isEmpty() } }
+        if (advertised.isNotEmpty()) return advertised
+        // Household fallback: English before unlabelled/original-language releases.
+        if (preferred == "hi") {
+            val english = streams.filter { "en" in languageHints(it) }
+            if (english.isNotEmpty()) return english
+        }
+        if (preferred == "en") {
+            val hindi = streams.filter { "hi" in languageHints(it) }
+            if (hindi.isNotEmpty()) return hindi
+        }
+        return streams.filter { languageHints(it).isEmpty() }
     }
 
-    private fun languageHints(stream: Stream): Set<String> {
-        val description = text(stream)
-        val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty().map { it.lowercase() }
+    fun normalizeLanguage(language: String): String? = when (language.lowercase().substringBefore('-').trim()) {
+        "hi", "hin", "hindi", "हिन्दी", "हिंदी" -> "hi"
+        "en", "eng", "english" -> "en"
+        "ja", "jpn", "japanese" -> "ja"
+        else -> null
+    }
+
+    fun advertisesAudio(stream: Stream, language: String): Boolean =
+        normalizeLanguage(language)?.let { it in languageHints(stream) } == true
+
+    fun languageHints(stream: Stream): Set<String> {
+        // A provider's structured audio list and filename are stronger than subtitle flags.
+        val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
+        val audioText = text(stream).lineSequence().map { line ->
+            line.replace(subtitleSuffix, " ")
+                .replace(subtitlePrefix, " ")
+        }.joinToString(" ")
         return buildSet {
-            if (Regex("(?i)(\\bhindi\\b|\\bhin\\b|🇮🇳)").containsMatchIn(description) || parsed.any { it in setOf("hi", "hin", "hindi") }) add("hi")
-            if (Regex("(?i)(\\benglish\\b|\\beng\\b|🇬🇧|🇺🇸)").containsMatchIn(description) || parsed.any { it in setOf("en", "eng", "english") }) add("en")
-            if (Regex("(?i)(\\bjapanese\\b|\\bjpn\\b|🇯🇵)").containsMatchIn(description) || parsed.any { it in setOf("ja", "jpn", "japanese") }) add("ja")
-            if (Regex("(?i)\\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\\b").containsMatchIn(description)) add("other")
+            parsed.forEach { normalizeLanguage(it)?.let(::add) }
+            if (hindiAudio.containsMatchIn(audioText)) add("hi")
+            if (englishAudio.containsMatchIn(audioText)) add("en")
+            if (japaneseAudio.containsMatchIn(audioText)) add("ja")
+            if (otherAudio.containsMatchIn(audioText)) add("other")
             if (parsed.isNotEmpty() && isEmpty()) add("other")
         }
     }
@@ -57,11 +102,61 @@ object MoonCatSourcePolicy {
     fun qualityTier(stream: Stream): Int {
         val description = text(stream)
         return when {
-            description.contains("1080", true) -> 0
-            description.contains("720", true) -> 1
-            else -> 2
+            stream.qualityValue == 1080 || description.contains("1080", true) -> 0
+            stream.qualityValue == 720 || description.contains("720", true) -> 1
+            stream.qualityValue in 1..719 || sdResolution.containsMatchIn(description) -> 2
+            else -> 3
         }
     }
 
-    fun rank(streams: List<Stream>): List<Stream> = streams.filter { suitable(it) }.sortedBy(::qualityTier)
+    fun languageTier(stream: Stream, language: String = "hi"): Int {
+        val preferred = normalizeLanguage(language) ?: "hi"
+        val hints = languageHints(stream)
+        return when {
+            preferred in hints -> 0
+            (if (preferred == "hi") "en" else "hi") in hints -> 1
+            hints.isEmpty() -> 2
+            else -> 3
+        }
+    }
+
+    /** Retain English/unknown fallbacks when advertised Hindi files fail readiness checks. */
+    fun playbackCandidates(streams: List<Stream>, language: String = "hi"): List<Stream> =
+        rank(streams, language).filter { !it.isExternal() && languageTier(it, language) < 3 }
+
+    /** Keep both free HTTP hosts and torrent swarms in the bounded race, plus language fallbacks. */
+    fun probePool(streams: List<Stream>, slot: Int, language: String): List<Stream> {
+        val preferred = streams.filter { languageTier(it, language) == 0 }
+        return when (slot) {
+            0, 1 -> preferred.filter { !it.isTorrent() && it.getStreamUrl() != null }
+            2, 3 -> preferred.filter { it.isTorrent() }
+            6, 7 -> streams.filter { languageTier(it, language) > 0 }
+            else -> preferred
+        }
+    }
+
+    /** Prefer clean digital releases over unknown encodes within the same resolution. */
+    fun releaseTier(stream: Stream): Int = when {
+        cleanRelease.containsMatchIn(text(stream)) -> 0
+        webRelease.containsMatchIn(text(stream)) -> 1
+        else -> 2
+    }
+
+    /** Seed counts are availability hints, never measured bandwidth. */
+    fun advertisedSeeders(stream: Stream): Int {
+        val content = text(stream)
+        val afterIcon = seederIcon.find(content)?.groupValues?.get(1)
+        val named = seederLabel.find(content)?.groupValues?.get(1)
+        return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
+    }
+
+    private data class Ranked(val stream: Stream, val language: Int, val quality: Int, val release: Int, val seeders: Int)
+
+    fun rank(streams: List<Stream>, preferredLanguage: String? = null): List<Stream> =
+        streams.asSequence().filter { suitable(it) }.map { stream ->
+            Ranked(stream, if (preferredLanguage == null) 0 else languageTier(stream, preferredLanguage),
+                qualityTier(stream), releaseTier(stream), advertisedSeeders(stream))
+        }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.quality }
+            .thenBy { it.release }.thenBy { if (it.stream.isTorrent()) 1 else 0 }
+            .thenByDescending { it.seeders }).map { it.stream }.toList()
 }

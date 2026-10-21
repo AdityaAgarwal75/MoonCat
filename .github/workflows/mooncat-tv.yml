@@ -1,0 +1,120 @@
+name: MoonCat TV validation and APK
+on:
+  push:
+    branches: [main, audit/tv-v1.0.6]
+    paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: mooncat-tv-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI_USE_DEBUG_SIGNING: 'true'
+      GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx5g -Dfile.encoding=UTF-8'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install Android build tools
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Validate packaged data contracts
+        run: python3 scripts/validate_tv_assets.py
+      - name: Release-script tests
+        run: PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
+      - name: Full TV unit suite
+        run: |
+          printf 'TRAKT_CLIENT_ID=mooncat-ci-fixture\nTRAKT_CLIENT_SECRET=mooncat-ci-fixture\n' > local.properties
+          chmod +x gradlew
+          ./gradlew :app:testFullDebugUnitTest --no-daemon --max-workers=2 --console=plain
+      - name: Remove test fixtures
+        if: always()
+        run: rm -f local.properties
+      - name: Select trusted signing or isolated preview
+        if: github.event_name != 'pull_request'
+        id: identity
+        env:
+          KEYSTORE: ${{ secrets.MOONCAT_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MOONCAT_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOONCAT_KEY_ALIAS }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, pathlib
+          trusted = all(os.environ.get(k) for k in ('KEYSTORE', 'STORE_PASSWORD', 'KEY_ALIAS'))
+          if trusted:
+              key = pathlib.Path(os.environ['RUNNER_TEMP']) / 'mooncat-release.jks'
+              key.write_bytes(base64.b64decode(os.environ['KEYSTORE'], validate=True)); key.chmod(0o600)
+              values = {'NUVIO_RELEASE_STORE_FILE': str(key), 'NUVIO_RELEASE_STORE_PASSWORD': os.environ['STORE_PASSWORD'], 'NUVIO_RELEASE_KEY_PASSWORD': os.environ['STORE_PASSWORD'], 'NUVIO_RELEASE_KEY_ALIAS': os.environ['KEY_ALIAS'], 'CI_USE_DEBUG_SIGNING':'false'}
+              # Java properties must escape separators, backslashes, and newlines.
+              def escape(s): return s.replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r').replace('=','\\=').replace(':','\\:').replace(' ','\\ ')
+              props = pathlib.Path('local.properties')
+              props.write_text(''.join(k+'='+escape(v)+'\n' for k,v in values.items() if k != 'CI_USE_DEBUG_SIGNING')); props.chmod(0o600)
+              with open(os.environ['GITHUB_ENV'],'a') as f: f.write('CI_USE_DEBUG_SIGNING=false\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('preview='+str(not trusted).lower()+'\n')
+          PY
+      - name: Build release and run vital lint
+        if: github.event_name != 'pull_request'
+        run: ./gradlew :app:assembleFullRelease -PmooncatPreview=${{ steps.identity.outputs.preview }} --no-daemon --max-workers=2 --console=plain
+      - name: Verify APK identity and packaged catalogues
+        if: github.event_name != 'pull_request'
+        env:
+          PREVIEW: ${{ steps.identity.outputs.preview }}
+        run: |
+          mkdir -p dist
+          APK="$(find app/build/outputs/apk/full/release -maxdepth 1 -name '*.apk' -print -quit)"
+          TOOL="$ANDROID_HOME/build-tools/36.0.0"
+          "$TOOL/apksigner" verify --verbose "$APK"
+          "$TOOL/aapt" dump badging "$APK" > /tmp/mooncat-badging.txt
+          if [ "$PREVIEW" = true ]; then
+            grep -F "name='dev.mooncat.tv.preview' versionCode='10007'" /tmp/mooncat-badging.txt
+            cp "$APK" dist/MoonCat-v1.0.6-Preview-FireTV.apk
+          else
+            grep -F "name='dev.mooncat.tv' versionCode='10007'" /tmp/mooncat-badging.txt
+            "$TOOL/apksigner" verify --print-certs "$APK" | grep -F '6341008335cc94f1dba060680dbedafd59ba5d5ef8017d09ff8757cccdd0ec0c'
+            cp "$APK" dist/MoonCat-v1.0.6-FireTV.apk
+          fi
+          python3 scripts/validate_packaged_catalogues.py "$APK"
+          cd dist
+          sha256sum *.apk > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MoonCat-TV-validation-${{ github.run_number }}
+          path: |
+            dist/
+            app/build/test-results/testFullDebugUnitTest/
+            app/build/reports/tests/testFullDebugUnitTest/
+            app/build/reports/lint-results-*.html
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Publish verified candidate
+        if: github.event_name == 'push' && github.ref_name == 'audit/tv-v1.0.6'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW: ${{ steps.identity.outputs.preview }}
+        run: |
+          cp docs/RELEASE-v1.0.6.md /tmp/release-notes.md
+          if [ "$PREVIEW" = true ]; then
+            printf '\nSigning: Original signing secrets are unavailable. This is MoonCat Preview, installed alongside the existing app; settings are separate.\n' >> /tmp/release-notes.md
+          fi
+          TAG=v1.0.6-rc.1
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file /tmp/release-notes.md --prerelease
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title 'MoonCat 1.0.6 — TV optimization candidate' --notes-file /tmp/release-notes.md --prerelease
+          fi
+      - name: Remove signing material
+        if: always()
+        run: rm -f local.properties "$RUNNER_TEMP/mooncat-release.jks"

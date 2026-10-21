@@ -244,7 +244,9 @@ internal fun PlayerRuntimeController.loadSourceStreams(forceRefresh: Boolean) {
             when (result) {
                 is NetworkResult.Success -> {
                     val addonStreams = StreamAutoPlaySelector.orderAddonStreams(result.data, installedAddonOrder, preferredServerNames)
-                    val allStreams = addonStreams.flatMap { it.streams }
+                    val allStreams = addonStreams.flatMap { it.streams }.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it)
+                    }
                     val availableAddons = addonStreams.map { it.addonName }
                     _uiState.update {
                         // On resume, merge fresh results with any previously cached streams
@@ -1278,7 +1280,9 @@ internal fun PlayerRuntimeController.loadStreamsForEpisode(video: Video, forceRe
             when (result) {
                 is NetworkResult.Success -> {
                     val addonStreams = StreamAutoPlaySelector.orderAddonStreams(result.data, installedAddonOrder, preferredServerNames)
-                    val allStreams = addonStreams.flatMap { it.streams }
+                    val allStreams = addonStreams.flatMap { it.streams }.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it)
+                    }
                     val availableAddons = addonStreams.map { it.addonName }
                     val currentFilter = _uiState.value.episodeSelectedAddonFilter
                     val filteredStreams = if (currentFilter == null) {
@@ -1955,7 +1959,9 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                     com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 2_000_000_000L)
                 }
                 return StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = allStreams,
+                    preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                    streams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
+                        allStreams, playerSettings.preferredAudioLanguage),
                     mode = effectiveMode,
                     regexPattern = effectiveRegex,
                     source = effectiveSource,
@@ -1998,7 +2004,9 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                 }
                 // Early fallback: binge group alone
                 return StreamAutoPlaySelector.selectAutoPlayStream(
-                    streams = allStreams,
+                    preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                    streams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
+                        allStreams, playerSettings.preferredAudioLanguage),
                     mode = effectiveMode,
                     regexPattern = effectiveRegex,
                     source = effectiveSource,
