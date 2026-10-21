@@ -85,15 +85,18 @@ class AddonPreferences @Inject constructor(
     }
 
     suspend fun installMooncatProviderOnce() {
-        val ds = store(1)
-        val marker = booleanPreferencesKey("mooncat_http_providers_added_v105")
-        ds.edit { prefs ->
+        // Profiles can use independent addon lists. Migrate each existing list once,
+        // retaining removals and disabled states on every later startup.
+        val marker = booleanPreferencesKey("mooncat_sources_added_v106")
+        profileManager.profiles.value.map { it.id }.ifEmpty { listOf(1) }.forEach { profileId ->
+        store(profileId).edit { prefs ->
             if (prefs[marker] == true) return@edit
             val urls = getCurrentList(prefs)
-            val providers = listOf("https://mediafusion.elfhosted.com", "https://torrentsdb.com", "https://hdhub.thevolecitor.qzz.io")
+            val providers = listOf("https://comet.elfhosted.com", "https://v3-channels.strem.io")
             val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
             if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
             prefs[marker] = true
+        }
         }
     }
 
@@ -257,6 +260,8 @@ class AddonPreferences @Inject constructor(
         "https://v3-cinemeta.strem.io",
         "https://opensubtitles-v3.strem.io",
         "https://anime-kitsu.strem.fun",
+        "https://v3-channels.strem.io",
+        "https://comet.elfhosted.com",
         "https://mediafusion.elfhosted.com",
         "https://torrentsdb.com",
         "https://hdhub.thevolecitor.qzz.io",

@@ -1,1 +1,3 @@
-MoonCat logo generated using the built-in image generator. Prompt: premium minimal champagne-gold crescent moon joined to a cat silhouette on midnight charcoal, recognizable at small sizes; no text. Launcher densities and wordmark rendered from this source for Android packaging.
+# MoonCat branding
+
+`mooncat-logo.png` is the violet moon-and-cat artwork currently used by the TV app (`app_logo_mark.png`). The launcher and wordmark variants remain in Android resources. Keep the repository preview and app branding in sync when updating these assets.

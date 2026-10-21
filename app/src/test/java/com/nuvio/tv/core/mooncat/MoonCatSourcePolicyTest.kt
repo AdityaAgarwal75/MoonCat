@@ -11,6 +11,21 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `episode numbers and sizes do not masquerade as 4k resolution`() {
+        assertTrue(MoonCatSourcePolicy.suitable(source("Serial Episode 2160 Hindi 480p 2160 MB")))
+        assertFalse(MoonCatSourcePolicy.suitable(source("Film 3840x2160 Hindi")))
+    }
+    @Test fun `older serial SD sources remain selectable behind HD`() {
+        val hd = source("720p Hindi")
+        val sd = source("480p Hindi 250 MB")
+        assertTrue(MoonCatSourcePolicy.suitable(sd))
+        assertEquals(listOf(hd, sd), MoonCatSourcePolicy.playbackCandidates(listOf(sd, hd)))
+    }
+    @Test fun `external provider pages remain manual choices and never autoplay`() {
+        val link = source("Official provider").copy(infoHash = null, externalUrl = "https://provider.example/show")
+        assertTrue(MoonCatSourcePolicy.suitable(link))
+        assertTrue(MoonCatSourcePolicy.playbackCandidates(listOf(link)).isEmpty())
+    }
     @Test fun `equivalent verified HTTP can outrank seed counts without overriding Hindi preference`() {
         val hindiHttp = source("1080p Hindi WEB-DL", "https://cdn.example/movie")
         val hindiTorrent = source("1080p Hindi WEB-DL 👤 999")
@@ -53,7 +68,7 @@ class MoonCatSourcePolicyTest {
     }
 
     @Test fun `4k remux and large releases are excluded`() {
-        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p REMUX", "Film 1080p 40 GB", "Film 1080p 7 GiB", "Film 1080p CAM", "Film 1080p TeleSync", "Film 480p 1 GB")
+        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p REMUX", "Film 1080p 40 GB", "Film 1080p 7 GiB", "Film 1080p CAM", "Film 1080p TeleSync")
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
         assertTrue(MoonCatSourcePolicy.suitable(source("Film Hindi English Japanese 1080p 2.5 GB")))
     }

@@ -121,7 +121,7 @@ data class Stream(
     /**
      * Returns true if this is an external URL (opens in browser)
      */
-    fun isExternal(): Boolean = externalUrl != null && url == null && !externalUrl.isMagnetLink()
+    fun isExternal(): Boolean = externalUrl != null && url == null && !externalUrl.isMagnetLink() && !externalUrl.isTorrentUrl()
 
     /**
      * Returns a display name for the stream, or null when no field is usable.

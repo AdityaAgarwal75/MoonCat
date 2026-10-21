@@ -5,8 +5,20 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("""(?i)(2160|4320|1440p|480p|360p|240p|\b[48][ ._-]?k\b|remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
+    private val excluded = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b|remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
+    private val ultraHd = Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""")
+    private val subtitleSuffix = Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+""")
+    private val subtitlePrefix = Regex("""(?i)\b(?:hindi|hin|english|eng|japanese|jpn)\s+(?:subtitles?|subs?|subbed)\b""")
+    private val hindiAudio = Regex("""(?i)(\b(?:hindi|hin|hi)\b|हिन्दी|हिंदी|🇮🇳)""")
+    private val englishAudio = Regex("""(?i)(\b(?:english|eng|en)\b|🇬🇧|🇺🇸)""")
+    private val japaneseAudio = Regex("""(?i)(\b(?:japanese|jpn|ja)\b|🇯🇵)""")
+    private val otherAudio = Regex("""(?i)\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\b""")
+    private val cleanRelease = Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""")
+    private val webRelease = Regex("""(?i)\b(?:web[ ._-]?rip|hdtv)\b""")
+    private val seederIcon = Regex("""(?:👤|👥|🌱)\s*(\d[\d,]*)""")
+    private val seederLabel = Regex("""(?i)\b(?:seeders?|seeds?)\s*[:=]?\s*(\d[\d,]*)""")
+    private val sdResolution = Regex("""(?i)\b(?:576|540|480|360|240)p\b""")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
         stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename,
         stream.clientResolve?.stream?.raw?.torrentName, stream.clientResolve?.stream?.raw?.filename,
@@ -30,8 +42,8 @@ object MoonCatSourcePolicy {
     fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES): Boolean {
         val episode = stream.clientResolve?.let { it.season != null || it.episode != null || it.mediaType == "series" } == true
         val limit = if (episode) minOf(2_000_000_000L, maxFileBytes) else maxFileBytes
-        val unknownUltraHd = qualityTier(stream) == 2 &&
-            Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""").containsMatchIn(text(stream))
+        val unknownUltraHd = qualityTier(stream) == 3 &&
+            ultraHd.containsMatchIn(text(stream))
         return stream.qualityValue <= 1080 && !unknownUltraHd && !excluded.containsMatchIn(text(stream)) &&
             (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
@@ -74,15 +86,15 @@ object MoonCatSourcePolicy {
         // A provider's structured audio list and filename are stronger than subtitle flags.
         val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
         val audioText = text(stream).lineSequence().map { line ->
-            line.replace(Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+"""), " ")
-                .replace(Regex("""(?i)\b(?:hindi|hin|english|eng|japanese|jpn)\s+(?:subtitles?|subs?|subbed)\b"""), " ")
+            line.replace(subtitleSuffix, " ")
+                .replace(subtitlePrefix, " ")
         }.joinToString(" ")
         return buildSet {
             parsed.forEach { normalizeLanguage(it)?.let(::add) }
-            if (Regex("""(?i)(\b(?:hindi|hin|hi)\b|हिन्दी|हिंदी|🇮🇳)""").containsMatchIn(audioText)) add("hi")
-            if (Regex("""(?i)(\b(?:english|eng|en)\b|🇬🇧|🇺🇸)""").containsMatchIn(audioText)) add("en")
-            if (Regex("""(?i)(\b(?:japanese|jpn|ja)\b|🇯🇵)""").containsMatchIn(audioText)) add("ja")
-            if (Regex("""(?i)\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\b""").containsMatchIn(audioText)) add("other")
+            if (hindiAudio.containsMatchIn(audioText)) add("hi")
+            if (englishAudio.containsMatchIn(audioText)) add("en")
+            if (japaneseAudio.containsMatchIn(audioText)) add("ja")
+            if (otherAudio.containsMatchIn(audioText)) add("other")
             if (parsed.isNotEmpty() && isEmpty()) add("other")
         }
     }
@@ -92,7 +104,8 @@ object MoonCatSourcePolicy {
         return when {
             stream.qualityValue == 1080 || description.contains("1080", true) -> 0
             stream.qualityValue == 720 || description.contains("720", true) -> 1
-            else -> 2
+            stream.qualityValue in 1..719 || sdResolution.containsMatchIn(description) -> 2
+            else -> 3
         }
     }
 
@@ -109,7 +122,7 @@ object MoonCatSourcePolicy {
 
     /** Retain English/unknown fallbacks when advertised Hindi files fail readiness checks. */
     fun playbackCandidates(streams: List<Stream>, language: String = "hi"): List<Stream> =
-        rank(streams, language).filter { languageTier(it, language) < 3 }
+        rank(streams, language).filter { !it.isExternal() && languageTier(it, language) < 3 }
 
     /** Keep both free HTTP hosts and torrent swarms in the bounded race, plus language fallbacks. */
     fun probePool(streams: List<Stream>, slot: Int, language: String): List<Stream> {
@@ -124,16 +137,16 @@ object MoonCatSourcePolicy {
 
     /** Prefer clean digital releases over unknown encodes within the same resolution. */
     fun releaseTier(stream: Stream): Int = when {
-        Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""").containsMatchIn(text(stream)) -> 0
-        Regex("""(?i)\b(?:web[ ._-]?rip|hdtv)\b""").containsMatchIn(text(stream)) -> 1
+        cleanRelease.containsMatchIn(text(stream)) -> 0
+        webRelease.containsMatchIn(text(stream)) -> 1
         else -> 2
     }
 
     /** Seed counts are availability hints, never measured bandwidth. */
     fun advertisedSeeders(stream: Stream): Int {
         val content = text(stream)
-        val afterIcon = Regex("""(?:👤|👥|🌱)\s*(\d[\d,]*)""").find(content)?.groupValues?.get(1)
-        val named = Regex("""(?i)\b(?:seeders?|seeds?)\s*[:=]?\s*(\d[\d,]*)""").find(content)?.groupValues?.get(1)
+        val afterIcon = seederIcon.find(content)?.groupValues?.get(1)
+        val named = seederLabel.find(content)?.groupValues?.get(1)
         return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
     }
 

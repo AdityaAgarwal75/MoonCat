@@ -27,7 +27,10 @@ import com.nuvio.tv.domain.model.ProxyHeaders
 import com.nuvio.tv.domain.model.ScraperInfo
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.domain.model.StreamBehaviorHints
+import com.nuvio.tv.core.streams.supportsResource
 import com.nuvio.tv.core.streams.supportsStreamResource
+import com.nuvio.tv.core.streams.addonVideoId
+import com.nuvio.tv.core.streams.addonMediaType
 import com.nuvio.tv.domain.model.enabledAddons
 import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.StreamRepository
@@ -43,6 +46,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.net.URLEncoder
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -194,9 +200,12 @@ class StreamRepositoryImpl @Inject constructor(
 
         try {
             // Filter addons that support streams for this type and id
+            val requestType = addonMediaType(type)
+            val requestId = addonVideoId(type, videoId, season, episode)
             val streamAddons = addons.filter { addon ->
-                addon.supportsStreamResource(type, videoId)
+                addon.supportsStreamResource(requestType, requestId)
             }
+            val addonSlots = Semaphore(6)
 
             val attemptedAddonNames = streamAddons.map { it.displayName } + serverSources.map { it.name }
             val attemptedFailures = java.util.Collections.synchronizedList(
@@ -208,7 +217,7 @@ class StreamRepositoryImpl @Inject constructor(
 
             coroutineScope {
                 // Channel to receive results as they complete
-                val resultChannel = Channel<AddonStreams>(Channel.UNLIMITED)
+                val resultChannel = Channel<AddonStreams>(16)
                 
                 // Track number of pending jobs
                 val totalJobs = streamAddons.size + 1 + serverSources.size
@@ -218,7 +227,10 @@ class StreamRepositoryImpl @Inject constructor(
                 streamAddons.forEach { addon ->
                     launch {
                         try {
-                            val streamsResult = getStreamsFromAddon(addon, type, videoId)
+                            val streamsResult = addonSlots.withPermit {
+                                withTimeoutOrNull(12_000L) { getStreamsFromAddon(addon, requestType, requestId) }
+                                    ?: NetworkResult.Error("Source timed out")
+                            }
                             when (streamsResult) {
                                 is NetworkResult.Success -> {
                                     if (streamsResult.data.isNotEmpty()) {
@@ -235,9 +247,13 @@ class StreamRepositoryImpl @Inject constructor(
                                     } else {
                                         // Stream endpoint returned empty - try inline
                                         // streams from meta response as fallback.
-                                        val inlineStreams = fetchInlineStreamsFromMeta(
-                                            addon, type, videoId
-                                        )
+                                        val inlineStreams = if (addon.supportsResource("meta", requestType, requestId)) {
+                                            addonSlots.withPermit {
+                                                withTimeoutOrNull(4_000L) {
+                                                    fetchInlineStreamsFromMeta(addon, requestType, requestId)
+                                                }.orEmpty()
+                                            }
+                                        } else emptyList()
                                         if (inlineStreams.isNotEmpty()) {
                                             resultChannel.send(
                                                 AddonStreams(
@@ -647,7 +663,7 @@ class StreamRepositoryImpl @Inject constructor(
         val encodedType = encodePathSegment(type)
         val encodedVideoId = encodePathSegment(videoId)
         val streamUrl = "$basePath/stream/$encodedType/$encodedVideoId.json$baseQuery"
-        Log.d(TAG, "Fetching streams type=$type videoId=$videoId url=$streamUrl")
+        Log.d(TAG, "Fetching streams type=$type videoId=$videoId ")
 
         // Display info comes from the installed addon the caller already holds. Calling
         // addonRepository.fetchAddon() here caused an unconditional manifest GET ahead of every
@@ -661,13 +677,13 @@ class StreamRepositoryImpl @Inject constructor(
                 val streams = result.data.streams?.map { 
                     it.toDomain(addonName, addonLogo) 
                 } ?: emptyList()
-                Log.d(TAG, "Streams success addon=$addonName count=${streams.size} url=$streamUrl")
+                Log.d(TAG, "Streams success addon=$addonName count=${streams.size} ")
                 NetworkResult.Success(streams)
             }
             is NetworkResult.Error -> {
                 Log.w(
                     TAG,
-                    "Streams failed addon=$addonName code=${result.code} message=${result.message} url=$streamUrl"
+                    "Streams failed addon=$addonName code=${result.code} message=${result.message} "
                 )
                 result
             }
@@ -717,7 +733,7 @@ class StreamRepositoryImpl @Inject constructor(
         val encodedType = encodePathSegment(type)
         val encodedMetaId = encodePathSegment(metaId)
         val metaUrl = "$basePath/meta/$encodedType/$encodedMetaId.json$baseQuery"
-        Log.d(TAG, "Fetching inline streams via meta type=$type metaId=$metaId videoId=$videoId url=$metaUrl")
+        Log.d(TAG, "Fetching inline streams via meta type=$type metaId=$metaId videoId=$videoId ")
         return try {
             when (val result = safeApiCall(context) { api.getMeta(metaUrl) }) {
                 is NetworkResult.Success -> {

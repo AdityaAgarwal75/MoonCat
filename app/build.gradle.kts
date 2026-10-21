@@ -103,13 +103,14 @@ android {
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "dev.mooncat.tv"
+        applicationId = if (providers.gradleProperty("mooncatPreview").orNull == "true") "dev.mooncat.tv.preview" else "dev.mooncat.tv"
+        manifestPlaceholders["mooncatAppLabel"] = if (providers.gradleProperty("mooncatPreview").orNull == "true") "MoonCat Preview" else "@string/app_name"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 24
         ndk { abiFilters += listOf(providers.gradleProperty("mooncatAbi").orElse("armeabi-v7a").get()) }
         targetSdk = 36
-        versionCode = 10006
-        versionName = "1.0.5"
+        versionCode = 10007
+        versionName = "1.0.6"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")

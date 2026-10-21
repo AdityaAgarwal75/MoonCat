@@ -667,12 +667,8 @@ class StreamScreenViewModel @Inject constructor(
                 }
                 streamFilterFullList = fullFiltered
                 val currentPageSize = _uiState.value.filteredStreams.size
-                val isFirstLoad = currentPageSize == 0
-                val paginatedStreams = if (isFirstLoad && fullFiltered.size > STREAM_FILTER_PAGE_SIZE) {
-                    fullFiltered.subList(0, STREAM_FILTER_PAGE_SIZE)
-                } else {
-                    fullFiltered
-                }
+                val pageEnd = currentPageSize.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(fullFiltered.size)
+                val paginatedStreams = fullFiltered.take(pageEnd)
 
                 updateUiStateIfChanged {
                     it.copy(

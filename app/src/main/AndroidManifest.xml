@@ -36,7 +36,7 @@
         android:allowBackup="false"
         android:banner="@drawable/mooncat_banner_v102"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="${mooncatAppLabel}"
         android:largeHeap="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"

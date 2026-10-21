@@ -103,8 +103,8 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: android.content.Context): ImageLoader {
         val imageOkHttpClient by lazy {
             val imageDispatcher = okhttp3.Dispatcher().apply {
-                maxRequests = 32
-                maxRequestsPerHost = 16
+                maxRequests = 8
+                maxRequestsPerHost = 4
             }
             OkHttpClient.Builder()
                 .dispatcher(imageDispatcher)
@@ -179,7 +179,7 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
             .precision(coil3.size.Precision.INEXACT)
             .allowHardware(false)
             .allowRgb565(imagePerformancePreferences.rgb565Enabled)
-            .bitmapFactoryMaxParallelism(4)
+            .bitmapFactoryMaxParallelism(2)
             .build()
     }
 }
