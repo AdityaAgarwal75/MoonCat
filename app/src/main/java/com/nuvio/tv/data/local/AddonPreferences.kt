@@ -89,14 +89,14 @@ class AddonPreferences @Inject constructor(
         // retaining removals and disabled states on every later startup.
         val marker = booleanPreferencesKey("mooncat_sources_added_v106")
         profileManager.profiles.value.map { it.id }.ifEmpty { listOf(1) }.forEach { profileId ->
-        store(profileId).edit { prefs ->
-            if (prefs[marker] == true) return@edit
-            val urls = getCurrentList(prefs)
-            val providers = listOf("https://comet.elfhosted.com", "https://v3-channels.strem.io")
-            val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
-            if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
-            prefs[marker] = true
-        }
+            store(profileId).edit { prefs ->
+                if (prefs[marker] == true) return@edit
+                val urls = getCurrentList(prefs, profileId)
+                val providers = listOf("https://comet.elfhosted.com", "https://v3-channels.strem.io")
+                val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
+                if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
+                prefs[marker] = true
+            }
         }
     }
 
@@ -196,12 +196,12 @@ class AddonPreferences @Inject constructor(
         }
     }
 
-    private fun getCurrentList(preferences: Preferences): List<String> {
+    private fun getCurrentList(preferences: Preferences, profileId: Int = effectiveProfileId()): List<String> {
         val json = preferences[orderedUrlsKey]
         return if (json != null) {
             parseUrlList(json)
         } else {
-            val legacySet = preferences[legacyUrlsKey] ?: getDefaultAddons()
+            val legacySet = preferences[legacyUrlsKey] ?: getDefaultAddons(profileId)
             legacySet.toList()
         }
     }

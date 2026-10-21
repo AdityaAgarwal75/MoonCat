@@ -1,31 +1,41 @@
-# MoonCat
+<p align="center"><img src="branding/mooncat-logo.png" width="160" alt="MoonCat violet moon and cat logo"></p>
 
-MoonCat is an Android TV media discovery and playback app derived from Nuvio. It is being prepared for Amazon Fire TV Stick (3rd generation), with an `armeabi-v7a` build.
+# MoonCat TV
 
-![MoonCat app icon](branding/mooncat-logo.png)
+A remote-first media discovery and playback app for Android TV and Amazon Fire TV, derived from [NuvioTV](https://github.com/NuvioMedia/NuvioTV).
 
-## Features
+[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Audit](docs/TV-AUDIT.md)
 
-- Two local profiles.
-- Hindi and English original-language discovery through the public TMDB addon.
-- Cinemeta catalog pagination; Kitsu anime catalogs for airing, trending, popular, and upcoming titles; and TVMaze airing listings.
-- Playback checks up to seven candidate sources concurrently, with each HTTP probe limited to 64 KiB and 1.5 seconds. It checks source availability rather than downloading complete torrents.
-- Prefers 1080p and falls back to 720p. Search limits are 7 GB for movies and 2 GB for episodes.
-- Embedded audio tracks are grouped for Hindi, English, and Japanese. If a requested language is missing, MoonCat searches a hinted source, verifies the actual tracks, and rolls back when possible.
-- News opens first-party browser links. In-app news streams are not verified.
+## What it does
 
-Catalog and source availability depend on third-party services and can vary by region. Some providers returned HTTP 403 in the current build environment, so provider coverage remains unverified.
+- Browse movies, series, anime, Hindi and regional discovery shelves.
+- Explore 11 studio collections with 11,655 catalogue entries and poster grids.
+- Search installed Stremio-compatible providers concurrently, with per-request deadlines.
+- Prefer Hindi and 1080p, retain English/720p/SD fallbacks, and select sources using bounded readiness probes.
+- Use the official YouTube catalogue, configured addons, or personal media servers.
+- Browse 20 Indian news channels, grouped by language.
+- Resume viewing, switch audio/subtitles, and check GitHub for updates.
 
-## Build
+Sources are supplied by independent services. Catalogue entries do not guarantee a playable source, a specific dub, or access in every region. External watch links open separately from embedded video streams.
 
-The app uses Kotlin, Jetpack Compose, Android SDK 36, JDK 17, and the Gradle 8.13 wrapper. Build the full release variant with:
+## Install the right APK
+
+The TV target is Android 7.0+ and `armeabi-v7a`, including Fire TV Stick 3rd generation. A regular update must retain `dev.mooncat.tv` and the original signing certificate. **MoonCat Preview** uses `dev.mooncat.tv.preview` and installs alongside it when trusted signing is unavailable. Profiles and settings are separate in Preview.
+
+The `mobile/` directory is an earlier experimental app, not a feature-complete phone version of this TV app.
+
+## Build and validate
+
+Use JDK 17 and Android SDK 36. The Gradle wrapper is pinned to 8.13.
 
 ```bash
+python3 scripts/validate_tv_assets.py
+./gradlew :app:testFullDebugUnitTest
 ./gradlew :app:assembleFullRelease
 ```
 
-Release signing is supplied through the `NUVIO_RELEASE_STORE_FILE`, `NUVIO_RELEASE_KEY_ALIAS`, `NUVIO_RELEASE_KEY_PASSWORD`, and `NUVIO_RELEASE_STORE_PASSWORD` environment variables. See [docs/MOONCAT-BUILD.md](docs/MOONCAT-BUILD.md) for release and verification details. The release APK has not yet been built or verified.
+See the [build guide](docs/MOONCAT-BUILD.md) for signing, test fixtures and isolated preview builds. APKs and checksums are release assets; source control does not contain split APK uploads. One active workflow builds and validates the checked-in source. Historical workflow examples live in `docs/archive/workflows/` and cannot run.
 
-## License
+## Attribution
 
-MoonCat is distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) and [NOTICE.md](NOTICE.md) for license and attribution information.
+Distributed under [GPL-3.0](LICENSE). See [NOTICE.md](NOTICE.md) for upstream attribution and [source research](docs/SOURCES.md) for provider references.

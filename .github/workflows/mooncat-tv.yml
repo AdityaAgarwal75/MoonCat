@@ -2,6 +2,7 @@ name: MoonCat TV validation and APK
 on:
   push:
     branches: [main, audit/tv-v1.0.6]
+    paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -30,6 +31,8 @@ jobs:
           "$SDKMANAGER" 'platforms;android-36' 'build-tools;36.0.0'
       - name: Validate packaged data contracts
         run: python3 scripts/validate_tv_assets.py
+      - name: Release-script tests
+        run: PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
       - name: Full TV unit suite
         run: |
           printf 'TRAKT_CLIENT_ID=mooncat-ci-fixture\nTRAKT_CLIENT_SECRET=mooncat-ci-fixture\n' > local.properties

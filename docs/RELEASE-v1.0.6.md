@@ -4,7 +4,9 @@
 - Keeps SD episode sources as a fallback after HD, instead of silently removing them.
 - Repairs bare IMDb episode requests when season/episode are supplied.
 - Bounds provider concurrency and timeout; skips unsupported metadata fallback requests.
-- Preserves source-list pagination as providers return results.
+- Shows source choices before waiting for readiness probes, preserves pagination, and keeps unavailable providers visible until retry.
+- Uses episode-specific saved-source keys and limits the in-memory search cache to four sessions.
+- Cancels earlier News connection requests when a later channel is selected.
 - Compiles source-policy patterns once; reduces simultaneous poster fetch/decode work and removes poster crossfades.
 - Adds the official YouTube catalogue and a Comet source connector. Availability depends on the provider and region.
 - Updates repository branding and consolidates build instructions.

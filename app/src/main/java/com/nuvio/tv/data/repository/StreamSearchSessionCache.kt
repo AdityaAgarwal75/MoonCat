@@ -230,7 +230,7 @@ internal class StreamSearchSessionCache(
             episode == other.episode
 
     private companion object {
-        const val DEFAULT_COMPLETED_TTL_MS = 15 * 60 * 1_000L
-        const val DEFAULT_MAX_ENTRIES = 12
+        const val DEFAULT_COMPLETED_TTL_MS = 5 * 60 * 1_000L
+        const val DEFAULT_MAX_ENTRIES = 4
     }
 }

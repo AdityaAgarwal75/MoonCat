@@ -200,7 +200,7 @@ class StreamRepositoryImpl @Inject constructor(
 
         try {
             // Filter addons that support streams for this type and id
-            val requestType = addonMediaType(type)
+            val requestType = addonMediaType(type, season, episode)
             val requestId = addonVideoId(type, videoId, season, episode)
             val streamAddons = addons.filter { addon ->
                 addon.supportsStreamResource(requestType, requestId)

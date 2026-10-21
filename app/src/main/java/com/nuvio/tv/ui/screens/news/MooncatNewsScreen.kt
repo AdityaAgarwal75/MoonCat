@@ -17,10 +17,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.*
 import com.nuvio.tv.R
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import java.io.IOException
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
@@ -55,22 +59,38 @@ fun MooncatNewsScreen(onPlay: (MooncatChannel) -> Unit = {}) {
     var opening by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var openJob by remember { mutableStateOf<Job?>(null) }
     val client = remember { OkHttpClient.Builder().callTimeout(6, TimeUnit.SECONDS).build() }
     fun openChannel(channel: MooncatChannel) {
-        if (opening != null) return
-        opening = channel.name
-        failed = null
-        scope.launch {
-            val available = withContext(Dispatchers.IO) {
-                try {
-                    val request = Request.Builder().url(channel.url).header("User-Agent", "Mozilla/5.0").apply {
-                        channel.headers.forEach { (key, value) -> header(key, value) }
-                    }.build()
-                    client.newCall(request).execute().use { response ->
-                        response.isSuccessful && response.body?.source()?.readUtf8Line()?.trim() == "#EXTM3U"
+        // Rapid remote presses must not launch an earlier channel after the latest choice.
+        openJob?.cancel()
+        openJob = scope.launch {
+            opening = channel.name
+            failed = null
+            val available = suspendCancellableCoroutine<Boolean> { continuation ->
+                val request = Request.Builder().url(channel.url).header("User-Agent", "Mozilla/5.0").apply {
+                    channel.headers.forEach { (key, value) -> header(key, value) }
+                }.build()
+                val call = client.newCall(request)
+                continuation.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, error: IOException) {
+                        if (continuation.isActive) continuation.resume(false)
                     }
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { false }
+                    override fun onResponse(call: Call, response: Response) {
+                        val valid = runCatching {
+                            response.use {
+                                if (!it.isSuccessful) return@use false
+                                val source = it.body?.source() ?: return@use false
+                                source.request(16)
+                                val count = minOf(source.buffer.size, 256L)
+                                source.buffer.clone().readUtf8(count)
+                                    .trimStart('\uFEFF', ' ', '\n', '\r').startsWith("#EXTM3U")
+                            }
+                        }.getOrDefault(false)
+                        if (continuation.isActive) continuation.resume(valid)
+                    }
+                })
             }
             opening = null
             if (available) onPlay(channel) else failed = channel.name

@@ -163,6 +163,26 @@ class MooncatCatalogInterceptor(
                     logo = null, baseUrl = baseUrl, catalogs = emptyList(), types = listOf(ContentType.MOVIE, ContentType.SERIES),
                     idPrefixes = listOf("tt"), resources = listOf(AddonResource("stream", listOf("movie", "series"), listOf("tt"))))
             }
+            if (baseUrl == "https://comet.elfhosted.com") {
+                return Addon(id = "mooncat.provider.comet", name = "Comet | ElfHosted", version = "1.0.0",
+                    description = "Independent stream provider. Public instance availability and limits vary.",
+                    logo = null, baseUrl = baseUrl, catalogs = emptyList(), types = listOf(ContentType.MOVIE, ContentType.SERIES),
+                    resources = listOf(AddonResource("stream", listOf("movie", "series"), listOf("tt", "kitsu"))))
+            }
+            if (baseUrl == "https://v3-channels.strem.io") {
+                return Addon(id = "com.linvo.stremiochannels", name = "YouTube", version = "1.30.7",
+                    description = "Official YouTube channel discovery with embedded video metadata.",
+                    logo = null, baseUrl = baseUrl, catalogs = listOf(
+                        CatalogDescriptor(type = ContentType.CHANNEL, id = "top", name = "YouTube channels",
+                            extra = listOf(CatalogExtra("search"), CatalogExtra("genre"), CatalogExtra("skip")),
+                            extraSupported = listOf("search", "genre", "skip")),
+                        CatalogDescriptor(type = ContentType.CHANNEL, id = "videos", name = "YouTube search",
+                            extra = listOf(CatalogExtra("search", isRequired = true)),
+                            extraSupported = listOf("search"), extraRequired = listOf("search"))),
+                    types = listOf(ContentType.CHANNEL), idPrefixes = listOf("yt_id:"), resources = listOf(
+                        AddonResource("catalog", listOf("channel"), null),
+                        AddonResource("meta", listOf("channel"), listOf("yt_id:"))))
+            }
             if (baseUrl == "https://v3-cinemeta.strem.io") {
                 val genres = listOf("Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western")
                 val catalogs = listOf(ContentType.MOVIE, ContentType.SERIES).flatMap { type ->

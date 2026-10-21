@@ -13,6 +13,10 @@ class AddonEpisodeIdentityTest {
         assertEquals("kitsu:123:5", addonVideoId("series", "kitsu:123:5", 1, 5))
         assertEquals("tmdb:123", addonVideoId("series", "tmdb:123", 1, 5))
     }
+    @Test fun `live TV resources retain their addon type`() {
+        assertEquals("tv", addonMediaType("tv"))
+        assertEquals("series", addonMediaType("tv", 1, 20))
+    }
     @Test fun `movies and incomplete episode selections are not fabricated`() {
         assertEquals("tt123", addonVideoId("movie", "tt123", 1, 2))
         assertEquals("tt123", addonVideoId("series", "tt123", null, 2))

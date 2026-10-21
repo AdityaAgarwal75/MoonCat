@@ -55,6 +55,8 @@ import com.nuvio.tv.ui.util.localizedGenreLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -116,7 +118,6 @@ class StreamScreenViewModel @Inject constructor(
     private var streamLoadJob: Job? = null
     private var streamLoadScope: kotlinx.coroutines.CoroutineScope? = null
     private var streamLoadCompleted = false
-    private var sourceChipErrorDismissJob: Job? = null
     private var pendingCacheSaveJob: Job? = null
     private var streamBadgePresentationJob: Job? = null
     private var streamFilterExpandJob: Job? = null
@@ -132,7 +133,6 @@ class StreamScreenViewModel @Inject constructor(
         context.getString(R.string.stream_embedded_fallback_name)
     }
 
-    private val videoId: String = savedStateHandle["videoId"] ?: ""
     private val contentType: String = savedStateHandle["contentType"] ?: ""
     private val title: String = savedStateHandle["title"] ?: ""
     private val poster: String? = savedStateHandle.getOptionalString("poster")
@@ -140,6 +140,9 @@ class StreamScreenViewModel @Inject constructor(
     private val logo: String? = savedStateHandle.getOptionalString("logo")
     private val season: Int? = savedStateHandle.get<String>("season")?.toIntOrNull()
     private val episode: Int? = savedStateHandle.get<String>("episode")?.toIntOrNull()
+    private val videoId: String = com.nuvio.tv.core.streams.addonVideoId(
+        contentType, savedStateHandle["videoId"] ?: "", season, episode
+    )
     private val episodeName: String? = savedStateHandle.getOptionalString("episodeName")
     private val runtime: Int? = savedStateHandle.get<String>("runtime")?.toIntOrNull()
     private val genres: String? = savedStateHandle.getOptionalString("genres")
@@ -388,7 +391,6 @@ class StreamScreenViewModel @Inject constructor(
         if (forceRefresh || _uiState.value.addonStreams.isEmpty()) {
             badgedAddonNames = emptySet()
         }
-        sourceChipErrorDismissJob?.cancel()
         val newScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob())
         streamLoadScope = newScope
         streamLoadJob = newScope.launch {
@@ -560,15 +562,30 @@ class StreamScreenViewModel @Inject constructor(
                     }
                 }
 
-                val allStreams = mergedAddonStreams.flatMap { it.streams }.filter {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                        it, if (season != null) 2_000_000_000L else 7_000_000_000L
+                // Parsing and sorting hundreds of provider results must not block TV focus frames.
+                val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
+                    val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
+                            it, if (season != null) 2_000_000_000L else 7_000_000_000L
+                        )
+                    }
+                    compatible to com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
+                        compatible, playerSettings.preferredAudioLanguage
                     )
                 }
-                val autoPlayStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
-                    allStreams, playerSettings.preferredAudioLanguage
-                )
                 val availableAddons = mergedAddonStreams.map { it.addonName }
+
+                // Present available choices before awaiting any HTTP/torrent readiness race.
+                updateUiStateIfChanged { state ->
+                    val visible = if (state.selectedAddonFilter == null) allStreams
+                        else allStreams.filter { it.addonName == state.selectedAddonFilter }
+                    streamFilterFullList = visible
+                    val pageEnd = state.filteredStreams.size.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(visible.size)
+                    state.copy(isLoading = false, addonStreams = mergedAddonStreams,
+                        allStreams = allStreams, filteredStreams = visible.take(pageEnd),
+                        availableAddons = availableAddons,
+                        sourceChips = mergeSourceChipStatuses(state.sourceChips, availableAddons), error = null)
+                }
 
                 // Auto-select only after all addons have responded or the
                 // configured timeout has elapsed. This gives slower addons a
@@ -1105,11 +1122,9 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     private fun markRemainingSourceChipsAsError() {
-        var markedAnyError = false
         updateUiStateIfChanged { state ->
             val hasPending = state.sourceChips.any { it.status == SourceChipStatus.LOADING }
             if (!hasPending) return@updateUiStateIfChanged state
-            markedAnyError = true
             state.copy(
                 sourceChips = state.sourceChips.map { chip ->
                     if (chip.status == SourceChipStatus.LOADING) {
@@ -1120,20 +1135,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             )
         }
-        if (markedAnyError) {
-            scheduleErrorChipRemoval()
-        }
-    }
-
-    private fun scheduleErrorChipRemoval() {
-        sourceChipErrorDismissJob?.cancel()
-        sourceChipErrorDismissJob = viewModelScope.launch {
-            delay(1600L)
-            updateUiStateIfChanged { state ->
-                val remaining = state.sourceChips.filterNot { it.status == SourceChipStatus.ERROR }
-                if (remaining.size == state.sourceChips.size) state else state.copy(sourceChips = remaining)
-            }
-        }
+        // Keep unavailable sources visible until retry, rather than hiding the diagnosis.
     }
 
     private fun com.nuvio.tv.domain.model.Addon.supportsStreamResourceForChip(type: String): Boolean {
@@ -1605,7 +1607,6 @@ class StreamScreenViewModel @Inject constructor(
         streamLoadScope?.cancel()
         streamLoadScope = null
         streamLoadJob = null
-        sourceChipErrorDismissJob?.cancel()
     }
 
     /**
