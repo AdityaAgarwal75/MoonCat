@@ -41,6 +41,9 @@ object StreamAutoPlaySelector {
         if (stream.serverTarget != null) return true
         // Streams with a direct URL are always playable regardless of debrid cache status.
         if (stream.getStreamUrl() != null) return true
+        // Uncached on a debrid service does not mean unavailable to the local
+        // torrent engine. Readiness is verified separately by its bounded race.
+        if (stream.isTorrent()) return true
         when (stream.debridCacheStatus?.state) {
             StreamDebridCacheState.CHECKING,
             StreamDebridCacheState.NOT_CACHED,

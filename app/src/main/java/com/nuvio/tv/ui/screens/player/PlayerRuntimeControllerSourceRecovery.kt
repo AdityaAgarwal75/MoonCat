@@ -19,7 +19,7 @@ internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String)
     if (!sourceFailoverSession.begin(requestKey, currentStreamUrl,
             _uiState.value.currentStreamInfoHash, _uiState.value.currentStreamFileIdx)) return false
     val failedUrl = currentStreamUrl
-    val position = (_exoPlayer?.currentPosition ?: _uiState.value.currentPosition).coerceAtLeast(0L)
+    val position = (_exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition).coerceAtLeast(0L)
     sourceRecoveryJob = scope.launch {
         showRecoveryOverlay()
         _uiState.update { it.copy(loadingMessage = "Trying another source…") }

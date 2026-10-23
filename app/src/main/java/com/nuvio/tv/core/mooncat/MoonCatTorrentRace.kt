@@ -35,9 +35,9 @@ object MoonCatTorrentRace {
             }
             if (first == null) return@coroutineScope null
             val ready = mutableListOf(first)
-            // A fast 720p/English file should not beat a ready 1080p/Hindi file by milliseconds.
-            val grace = if (MoonCatSourcePolicy.languageTier(first, preferredLanguage) > 0 &&
-                ranked.any { MoonCatSourcePolicy.languageTier(it, preferredLanguage) == 0 }) DEADLINE_MS else QUALITY_GRACE_MS
+            // Brief quality grace only. Missing preferred audio must not add a
+            // second full provider deadline after a playable file is ready.
+            val grace = QUALITY_GRACE_MS
             withTimeoutOrNull(grace) {
                 while (completed < jobs.size) {
                     results.receive()?.let { ready.add(it) }

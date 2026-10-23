@@ -68,6 +68,7 @@ internal fun PlayerRuntimeController.observeTorrentState() {
                 is TorrentState.Streaming -> onTorrentStreaming(torrentState)
                 is TorrentState.Error -> {
                     Log.e(TAG, "Torrent error: ${torrentState.message}")
+                    if (tryAlternativeSource(context.getString(R.string.player_error_torrent, torrentState.message))) return@collectLatest
                     _uiState.update {
                         it.copy(
                             error = context.getString(R.string.player_error_torrent, torrentState.message),
@@ -210,6 +211,8 @@ internal fun PlayerRuntimeController.launchTorrentSourceStream(
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start torrent stream", e)
+            if (tryAlternativeSource(context.getString(R.string.player_error_failed_start_torrent,
+                    e.message ?: context.getString(R.string.error_unknown)))) return@launch
             _uiState.update {
                 it.copy(
                     error = context.getString(

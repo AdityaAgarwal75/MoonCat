@@ -112,6 +112,23 @@ class StreamScreenViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private var autoPlayHandledForSession = false
+    private val failedAutoPlayIdentities = linkedSetOf<String>()
+    private fun autoPlayIdentity(stream: Stream): String = stream.getStreamUrl()
+        ?: "${stream.getEffectiveInfoHash()}:${stream.getEffectiveFileIdx()}:${stream.stableKey()}"
+
+    fun retryAfterAutoPlayResolutionFailure(stream: Stream) {
+        failedAutoPlayIdentities.add(autoPlayIdentity(stream))
+        val exhausted = failedAutoPlayIdentities.size >= 4 || manualSelection
+        autoPlayHandledForSession = exhausted
+        directAutoPlayFlowEnabledForSession = !exhausted
+        updateUiStateIfChanged { it.copy(autoPlayStream = null, autoPlayPlaybackInfo = null,
+            isLoading = !exhausted, isDirectAutoPlayFlow = !exhausted,
+            showDirectAutoPlayOverlay = !exhausted,
+            playbackErrorMessage = if (exhausted) "Available sources could not be resolved. Retry or choose another source." else null) }
+        if (exhausted) return
+        loadStreams()
+    }
+
     private var directAutoPlayModeInitializedForSession = false
     private var directAutoPlayFlowEnabledForSession = false
     private var isTorrentStreamStarted = false
@@ -452,7 +469,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            if (!autoPlayHandledForSession && playerSettings.streamReuseLastLinkEnabled) {
+            if (!autoPlayHandledForSession && failedAutoPlayIdentities.isEmpty() && playerSettings.streamReuseLastLinkEnabled) {
                 val cached = streamLinkCacheDataStore.getValid(
                     contentKey = streamCacheKey,
                     maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
@@ -568,7 +585,7 @@ class StreamScreenViewModel @Inject constructor(
                 // Parsing and sorting hundreds of provider results must not block TV focus frames.
                 val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
                     val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
+                        autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
                             it, if (season != null) 2_000_000_000L else 7_000_000_000L, allow4k = allow4k
                         )
                     }
@@ -925,7 +942,7 @@ class StreamScreenViewModel @Inject constructor(
             // user sees the stream picker.
             // For unlimited: keep the overlay — we continue checking as more
             // addons respond until the hard timeout below.
-            if (directFlowActive && !resolvedAutoPlayTarget && lastSuccessData != null && !isUnlimitedTimeout) {
+            if (directFlowActive && !resolvedAutoPlayTarget && !sourceRaceInProgress && lastSuccessData != null && !isUnlimitedTimeout) {
                 // If torrents are still pending cache check, the next emission
                 // will carry the result — don't tear down yet.
                 val hasCheckingTorrents = lastSuccessData?.any { group ->
