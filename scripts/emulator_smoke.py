@@ -2,6 +2,7 @@
 import pathlib
 import subprocess
 import time
+from smoke_assertions import assert_app_runtime_healthy
 
 out = pathlib.Path('smoke-results')
 out.mkdir(exist_ok=True)
@@ -33,8 +34,8 @@ for key in ['KEYCODE_DPAD_DOWN', 'KEYCODE_DPAD_RIGHT', 'KEYCODE_DPAD_RIGHT',
 capture('03-navigation')
 logs = adb('logcat', '-d', '-v', 'threadtime').decode(errors='replace')
 (out / 'logcat.txt').write_text(logs)
-(out / 'memory.txt').write_bytes(adb('shell', 'dumpsys', 'meminfo', package))
-assert 'FATAL EXCEPTION' not in logs, 'Android runtime crash: inspect smoke-results/logcat.txt'
-assert 'ANR in ' + package not in logs, 'App not responding during smoke'
+memory = adb('shell', 'dumpsys', 'meminfo', package).decode(errors='replace')
+(out / 'memory.txt').write_text(memory)
+assert_app_runtime_healthy(logs, memory)
 assert adb('shell', 'pidof', package).strip(), 'App process exited during remote navigation'
 print('Optimized release launched and survived profile/Home remote-navigation smoke; screenshots and logs saved.')
