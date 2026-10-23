@@ -460,6 +460,10 @@ class PlaybackSettingsViewModel @Inject constructor(
         playerSettingsDataStore.setParallelChunkSizeKb(clampedChunkKb)
     }
 
+    suspend fun setAllow4kWhenFast(enabled: Boolean) {
+        playerSettingsDataStore.setAllow4kWhenFast(enabled)
+    }
+
     suspend fun setStreamAutoPlayMode(mode: StreamAutoPlayMode) {
         playerSettingsDataStore.setStreamAutoPlayMode(mode)
     }

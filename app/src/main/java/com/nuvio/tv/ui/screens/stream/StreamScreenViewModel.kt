@@ -112,6 +112,23 @@ class StreamScreenViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private var autoPlayHandledForSession = false
+    private val failedAutoPlayIdentities = linkedSetOf<String>()
+    private fun autoPlayIdentity(stream: Stream): String = stream.getStreamUrl()
+        ?: "${stream.getEffectiveInfoHash()}:${stream.getEffectiveFileIdx()}:${stream.stableKey()}"
+
+    fun retryAfterAutoPlayResolutionFailure(stream: Stream) {
+        failedAutoPlayIdentities.add(autoPlayIdentity(stream))
+        val exhausted = failedAutoPlayIdentities.size >= 4 || manualSelection
+        autoPlayHandledForSession = exhausted
+        directAutoPlayFlowEnabledForSession = !exhausted
+        updateUiStateIfChanged { it.copy(autoPlayStream = null, autoPlayPlaybackInfo = null,
+            isLoading = !exhausted, isDirectAutoPlayFlow = !exhausted,
+            showDirectAutoPlayOverlay = !exhausted,
+            playbackErrorMessage = if (exhausted) "Available sources could not be resolved. Retry or choose another source." else null) }
+        if (exhausted) return
+        loadStreams()
+    }
+
     private var directAutoPlayModeInitializedForSession = false
     private var directAutoPlayFlowEnabledForSession = false
     private var isTorrentStreamStarted = false
@@ -314,6 +331,10 @@ class StreamScreenViewModel @Inject constructor(
         when (event) {
             is StreamScreenEvent.OnAddonFilterSelected -> filterByAddon(event.addonName)
             is StreamScreenEvent.OnStreamSelected -> {
+                autoPlayHandledForSession = true
+                directAutoPlayFlowEnabledForSession = false
+                updateUiStateIfChanged { it.copy(autoPlayStream = null, autoPlayPlaybackInfo = null,
+                    isDirectAutoPlayFlow = false, showDirectAutoPlayOverlay = false) }
                 cancelStreamsLoad()
             }
             StreamScreenEvent.OnAutoPlayConsumed -> {
@@ -349,7 +370,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
                 loadStreams(forceRefresh = true)
             }
-            StreamScreenEvent.OnRetry -> loadStreams()
+            StreamScreenEvent.OnRetry -> loadStreams(forceRefresh = true)
             StreamScreenEvent.OnBackPress -> { /* Handle in screen */ }
             StreamScreenEvent.OnResume -> {
                 hostInForeground.value = true
@@ -382,6 +403,12 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     private fun loadStreams(forceRefresh: Boolean = false) {
+        if (forceRefresh) {
+            failedAutoPlayIdentities.clear()
+            autoPlayHandledForSession = manualSelection
+            directAutoPlayModeInitializedForSession = false
+            directAutoPlayFlowEnabledForSession = false
+        }
         streamRepository.setLocalPluginSearchPaused(false)
         streamLoadScope?.cancel()
         streamLoadScope = null
@@ -391,11 +418,14 @@ class StreamScreenViewModel @Inject constructor(
         if (forceRefresh || _uiState.value.addonStreams.isEmpty()) {
             badgedAddonNames = emptySet()
         }
-        val newScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob())
+        val newScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(viewModelScope.coroutineContext[kotlinx.coroutines.Job]))
         streamLoadScope = newScope
         streamLoadJob = newScope.launch {
             streamLoadCompleted = false
             val playerSettings = playerSettingsDataStore.playerSettings.first()
+            val allow4k = playerSettings.allow4kWhenFast && withContext(Dispatchers.Default) {
+                com.nuvio.tv.core.mooncat.MoonCatDeviceCapabilities.supports4k
+            }
             if (manualSelection) {
                 directAutoPlayModeInitializedForSession = true
                 directAutoPlayFlowEnabledForSession = false
@@ -449,7 +479,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            if (!autoPlayHandledForSession && playerSettings.streamReuseLastLinkEnabled) {
+            if (!forceRefresh && !autoPlayHandledForSession && failedAutoPlayIdentities.isEmpty() && playerSettings.streamReuseLastLinkEnabled) {
                 val cached = streamLinkCacheDataStore.getValid(
                     contentKey = streamCacheKey,
                     maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
@@ -565,13 +595,16 @@ class StreamScreenViewModel @Inject constructor(
                 // Parsing and sorting hundreds of provider results must not block TV focus frames.
                 val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
                     val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                            it, if (season != null) 2_000_000_000L else 7_000_000_000L
+                        autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
+                            it, if (season != null) 2_000_000_000L else 7_000_000_000L, allow4k = allow4k
                         )
                     }
-                    compatible to com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
-                        compatible, playerSettings.preferredAudioLanguage
-                    )
+                    // Unverified 4K files are eligible only for the measured auto race,
+                    // never an unchecked manual choice or failed-probe fallback.
+                    compatible.filterNot { com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it) } to
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
+                            compatible, playerSettings.preferredAudioLanguage, allow4k
+                        )
                 }
                 val availableAddons = mergedAddonStreams.map { it.addonName }
 
@@ -587,27 +620,14 @@ class StreamScreenViewModel @Inject constructor(
                         sourceChips = mergeSourceChipStatuses(state.sourceChips, availableAddons), error = null)
                 }
 
-                // Auto-select only after all addons have responded or the
-                // configured timeout has elapsed. This gives slower addons a
-                // chance to return higher-quality streams before the selector
-                // picks from whatever is available.
-                val preferredHdHttp = autoPlayStreams.filter {
-                    !it.isTorrent() && it.getStreamUrl() != null &&
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(it, playerSettings.preferredAudioLanguage) == 0 &&
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.qualityTier(it) == 0
+                // Start with a playable response instead of waiting for every provider
+                // or for a Hindi label. Slow/missing dubs must not block English playback.
+                val earlyStreams = autoPlayStreams.filter {
+                    (!it.isTorrent() && it.getStreamUrl() != null) ||
+                        it.serverTarget != null || it.isYouTube() || it.isDirectDebrid()
                 }
-                val canProbeEarly = !isAllLoaded && preferredHdHttp.isNotEmpty() &&
-                    playerSettings.streamAutoPlayMode != StreamAutoPlayMode.MANUAL &&
-                    StreamAutoPlaySelector.selectAutoPlayStream(
-                        streams = preferredHdHttp,
-                        mode = playerSettings.streamAutoPlayMode,
-                        regexPattern = playerSettings.streamAutoPlayRegex,
-                        source = playerSettings.streamAutoPlaySource,
-                        installedAddonNames = installedAddonOrder.toSet(),
-                        selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                        selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                        preferredAudioLanguage = playerSettings.preferredAudioLanguage
-                    ) != null
+                val canProbeEarly = !isAllLoaded && earlyStreams.isNotEmpty() &&
+                    playerSettings.streamAutoPlayMode != StreamAutoPlayMode.MANUAL
                 val shouldAutoSelect = !autoPlayHandledForSession && !resolvedAutoPlayTarget &&
                     !sourceRaceInProgress && (isAllLoaded || canProbeEarly)
                 val selectedAutoPlayStream = if (!shouldAutoSelect) {
@@ -615,6 +635,7 @@ class StreamScreenViewModel @Inject constructor(
                 } else {
                     fun pick(remaining: List<Stream>) = StreamAutoPlaySelector.selectAutoPlayStream(
                         preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                        allow4k = allow4k,
                         streams = remaining,
                         mode = playerSettings.streamAutoPlayMode,
                         regexPattern = playerSettings.streamAutoPlayRegex,
@@ -643,7 +664,7 @@ class StreamScreenViewModel @Inject constructor(
                         coroutineScope {
                             val http = async {
                                 com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(
-                                    candidates.filter { !it.isTorrent() }, playerSettings.preferredAudioLanguage
+                                    candidates.filter { !it.isTorrent() }, playerSettings.preferredAudioLanguage, allow4k
                                 )
                             }
                             val torrent = async {
@@ -656,10 +677,8 @@ class StreamScreenViewModel @Inject constructor(
                                 catch (_: Exception) { null }
                             }
                             val httpWinner = http.await()
-                            if (httpWinner != null &&
-                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(httpWinner, playerSettings.preferredAudioLanguage) == 0 &&
-                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.qualityTier(httpWinner) == 0) {
-                                // A verified preferred-language HD URL need not wait for a slower swarm.
+                            if (httpWinner != null) {
+                                // A ready HTTP file wins now; do not wait for a torrent or dub.
                                 torrent.cancel()
                                 return@coroutineScope httpWinner
                             }
@@ -668,7 +687,11 @@ class StreamScreenViewModel @Inject constructor(
                             }
                             com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
                                 ready, playerSettings.preferredAudioLanguage
-                            ).firstOrNull()
+                            ).firstOrNull() ?: candidates.firstOrNull {
+                                !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)
+                            }
+                            // A sample timeout is not proof a file is unplayable. Let the
+                            // real player try it, with bounded source failover on failure.
                         }
                     } finally { sourceRaceInProgress = false }
                 }
@@ -825,29 +848,10 @@ class StreamScreenViewModel @Inject constructor(
                                 applySuccess(result.data, isAllLoaded = true)
                                 if (resolvedAutoPlayTarget) {
                                     autoSelectTriggered = true
-                                } else if (directAutoPlayFlowEnabledForSession && !isUnlimitedTimeout) {
-                                    // Bounded/instant timeout: no match found.
-                                    // If there are still torrents with a pending
-                                    // debrid cache check, wait for the next emission
-                                    // (which will carry the CACHED/NOT_CACHED result)
-                                    // instead of showing the picker immediately.
-                                    val hasCheckingTorrents = result.data.any { group ->
-                                        group.streams.any { s ->
-                                            s.isTorrent() && s.debridCacheStatus?.state == com.nuvio.tv.domain.model.StreamDebridCacheState.CHECKING
-                                        }
-                                    }
-                                    if (!hasCheckingTorrents) {
-                                        autoPlayHandledForSession = true
-                                        directAutoPlayFlowEnabledForSession = false
-                                        updateUiStateIfChanged {
-                                            it.copy(
-                                                isDirectAutoPlayFlow = false,
-                                                showDirectAutoPlayOverlay = false,
-                                                directAutoPlayMessage = null
-                                            )
-                                        }
-                                    }
                                 }
+                                // A partial response is not a completed search. Keep
+                                // autoplay armed for slower providers, including when
+                                // the first provider returned an empty/unusable list.
                             }
                         }
                         is NetworkResult.Error -> {
@@ -857,7 +861,7 @@ class StreamScreenViewModel @Inject constructor(
                             updateUiStateIfChanged {
                                 it.copy(
                                     isLoading = false,
-                                    error = result.message,
+                                    error = if (it.allStreams.isEmpty()) result.message else null,
                                     isDirectAutoPlayFlow = false,
                                     showDirectAutoPlayOverlay = false,
                                     directAutoPlayMessage = null
@@ -910,9 +914,9 @@ class StreamScreenViewModel @Inject constructor(
             // - unlimited: check each addon response as it arrives; if a match
             //   is found use it immediately; otherwise keep waiting until all
             //   addons finish or the hard timeout (60s) forces a fallback.
-            val timeoutMs = (playerSettings.streamAutoPlayTimeoutSeconds * 1_000L).coerceIn(0L, 8_000L)
+            val timeoutMs = (playerSettings.streamAutoPlayTimeoutSeconds * 1_000L).coerceIn(0L, 1_500L)
             if (playerSettings.streamAutoPlayTimeoutSeconds != 0) {
-                delay(if (isUnlimitedTimeout) 8_000L else timeoutMs)
+                delay(if (isUnlimitedTimeout) 1_500L else timeoutMs)
             }
             timeoutElapsed = true
             val directDebridLoadedByTimeout = !directDebridAvailable ||
@@ -924,31 +928,9 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            // For instant/bounded timeout: if streams arrived but no auto-play
-            // target was resolved, tear down the overlay immediately so the
-            // user sees the stream picker.
-            // For unlimited: keep the overlay — we continue checking as more
-            // addons respond until the hard timeout below.
-            if (directFlowActive && !resolvedAutoPlayTarget && lastSuccessData != null && !isUnlimitedTimeout) {
-                // If torrents are still pending cache check, the next emission
-                // will carry the result — don't tear down yet.
-                val hasCheckingTorrents = lastSuccessData?.any { group ->
-                    group.streams.any { s ->
-                        s.isTorrent() && s.debridCacheStatus?.state == com.nuvio.tv.domain.model.StreamDebridCacheState.CHECKING
-                    }
-                } == true
-                if (!hasCheckingTorrents) {
-                    autoPlayHandledForSession = true
-                    directAutoPlayFlowEnabledForSession = false
-                    updateUiStateIfChanged {
-                        it.copy(
-                            isDirectAutoPlayFlow = false,
-                            showDirectAutoPlayOverlay = false,
-                            directAutoPlayMessage = null
-                        )
-                    }
-                }
-            }
+            // The selection grace period is not a provider-search deadline. If
+            // current results are empty/unusable, keep collecting and selecting
+            // automatically until providers finish or the hard watchdog expires.
 
             // Hard wall-clock fallback: if the upstream stream flow never terminates
             // (e.g. a scraper hangs and keeps the plugin channelFlow open), the direct

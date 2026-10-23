@@ -15,7 +15,7 @@ for path in assets.glob('*.json.gz'):
 assert total > 10000
 assert len(json.loads(gzip.decompress((assets / 'wizarding.json.gz').read_bytes()))) == 11
 for name in ['splash','mark','word','banner','profiles']:
-    assert (root / f'app/src/main/res/drawable/mooncat_{name}_v102.webp').exists()
+    assert (root / f'app/src/main/res/drawable-nodpi/mooncat_{name}_v102.webp').exists()
 print(f'Validated 11 studio catalogues with {total} entries and all five MoonCat branding assets')
 
 hbo = {x['imdb']: x for x in json.loads(gzip.decompress((assets/'hbo.json.gz').read_bytes()))}

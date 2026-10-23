@@ -41,6 +41,9 @@ object StreamAutoPlaySelector {
         if (stream.serverTarget != null) return true
         // Streams with a direct URL are always playable regardless of debrid cache status.
         if (stream.getStreamUrl() != null) return true
+        // Uncached on a debrid service does not mean unavailable to the local
+        // torrent engine. Readiness is verified separately by its bounded race.
+        if (stream.isTorrent()) return true
         when (stream.debridCacheStatus?.state) {
             StreamDebridCacheState.CHECKING,
             StreamDebridCacheState.NOT_CACHED,
@@ -68,7 +71,8 @@ object StreamAutoPlaySelector {
         preferredBingeGroup: String? = null,
         preferBingeGroupInSelection: Boolean = false,
         bingeGroupOnly: Boolean = false,
-        preferredAudioLanguage: String? = null
+        preferredAudioLanguage: String? = null,
+        allow4k: Boolean = false
     ): Stream? {
         if (streams.isEmpty()) return null
 
@@ -83,7 +87,7 @@ object StreamAutoPlaySelector {
             StreamAutoPlaySource.INSTALLED_ADDONS_ONLY -> streams.filter { it.serverTarget != null || it.addonName in installedAddonNames }
             StreamAutoPlaySource.ENABLED_PLUGINS_ONLY -> streams.filter { it.addonName !in installedAddonNames }
         }
-        val candidateStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(sourceScopedStreams, preferredAudioLanguage).filter { stream ->
+        val candidateStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(sourceScopedStreams, preferredAudioLanguage, allow4k).filter { stream ->
             val isAddonStream = stream.addonName in installedAddonNames
             if (stream.serverTarget != null) {
                 true
@@ -101,7 +105,7 @@ object StreamAutoPlaySelector {
         // not be limited by autoplay source/addon selection filters.
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
         if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
-            val bingeGroupMatch = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(streams, preferredAudioLanguage).firstOrNull { stream ->
+            val bingeGroupMatch = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(streams, preferredAudioLanguage, allow4k).firstOrNull { stream ->
                 !stream.isExternal() &&
                     (preferredAudioLanguage == null ||
                         com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(stream, preferredAudioLanguage) ==
@@ -122,7 +126,10 @@ object StreamAutoPlaySelector {
 
         return when (mode) {
             StreamAutoPlayMode.MANUAL -> null
-            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { isPlayable(it) }
+            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull {
+                isPlayable(it) && (!it.isTorrent() || it.debridCacheStatus == null ||
+                    it.debridCacheStatus.state == StreamDebridCacheState.CACHED)
+            } ?: candidateStreams.firstOrNull { isPlayable(it) }
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
  

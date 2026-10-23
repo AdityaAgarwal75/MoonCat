@@ -199,7 +199,7 @@ class StreamAutoPlaySelectorTest {
     }
 
     @Test
-    fun `first stream skips checking and not cached local debrid streams`() {
+    fun `first stream prefers a ready cached torrent before uncached candidates`() {
         val checking = stream(
             addonName = "AddonA",
             name = "Checking",
@@ -236,6 +236,17 @@ class StreamAutoPlaySelectorTest {
         )
 
         assertEquals(cached, selected)
+    }
+
+    @Test
+    fun `uncached torrent can still use the free local engine when no cached source exists`() {
+        val uncached = stream(addonName = "AddonA", name = "1080p English",
+            infoHash = "uncached", cacheState = StreamDebridCacheState.NOT_CACHED)
+        assertEquals(uncached, StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(uncached), mode = StreamAutoPlayMode.FIRST_STREAM,
+            regexPattern = "", source = StreamAutoPlaySource.ALL_SOURCES,
+            installedAddonNames = setOf("AddonA"), selectedAddons = emptySet(), selectedPlugins = emptySet()
+        ))
     }
 
     @Test

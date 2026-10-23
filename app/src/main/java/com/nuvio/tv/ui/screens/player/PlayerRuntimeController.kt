@@ -451,6 +451,8 @@ class PlayerRuntimeController(
     internal var stillWatchingPromptJob: Job? = null
     internal var startupLoadingReportJob: Job? = null
     internal var sourceStreamsJob: Job? = null
+    internal var sourceRecoveryJob: Job? = null
+    internal val sourceFailoverSession = com.nuvio.tv.core.player.SourceFailoverSession()
     internal var sourceBadgeJob: Job? = null
     internal var sourceFilterFullList: List<com.nuvio.tv.domain.model.Stream> = emptyList()
     internal var sourceBadgedAddonNames: Set<String> = emptySet()
@@ -777,6 +779,7 @@ class PlayerRuntimeController(
     }
 
     fun onCleared() {
+        sourceRecoveryJob?.cancel()
         playerSession.close()
         stopServerPlayback()
         releasePlayer()

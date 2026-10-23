@@ -5,7 +5,10 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b|remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
+    private val excluded = Regex("""(?i)(remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
+    private val aboveHd = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b)""")
+    private val fourK = Regex("""(?i)(\b2160p\b|3840x2160|\b4[ ._-]?k\b)""")
+    private val above4k = Regex("""(?i)(\b(?:4320|1440)p\b|7680x4320|\b8[ ._-]?k\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
     private val ultraHd = Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""")
     private val subtitleSuffix = Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+""")
@@ -39,13 +42,16 @@ object MoonCatSourcePolicy {
             (it.groupValues[1].toDouble() * multiplier).toLong()
         }
 
-    fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES): Boolean {
+    fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES, allow4k: Boolean = false): Boolean {
         val episode = stream.clientResolve?.let { it.season != null || it.episode != null || it.mediaType == "series" } == true
         val limit = if (episode) minOf(2_000_000_000L, maxFileBytes) else maxFileBytes
-        val unknownUltraHd = qualityTier(stream) == 3 &&
-            ultraHd.containsMatchIn(text(stream))
-        return stream.qualityValue <= 1080 && !unknownUltraHd && !excluded.containsMatchIn(text(stream)) &&
-            (sizeBytes(stream)?.let { it in 1..limit } ?: true)
+        val label = text(stream)
+        val isUltra = is4k(stream)
+        val permitsUltra = allow4k && isUltra && !stream.isTorrent() && !above4k.containsMatchIn(label)
+        val unknownUltraHd = qualityTier(stream) == 3 && ultraHd.containsMatchIn(label)
+        return stream.qualityValue <= (if (permitsUltra) 2160 else 1080) &&
+            (permitsUltra || !aboveHd.containsMatchIn(label)) && !unknownUltraHd &&
+            !excluded.containsMatchIn(label) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
 
     fun reusableRelease(name: String, filename: String?, size: Long?, preferredLanguage: String, maxFileBytes: Long): Boolean {
@@ -99,9 +105,13 @@ object MoonCatSourcePolicy {
         }
     }
 
+    fun is4kLabel(label: String): Boolean = fourK.containsMatchIn(label)
+    fun is4k(stream: Stream): Boolean = stream.qualityValue == 2160 || is4kLabel(text(stream))
+
     fun qualityTier(stream: Stream): Int {
         val description = text(stream)
         return when {
+            is4k(stream) -> -1
             stream.qualityValue == 1080 || description.contains("1080", true) -> 0
             stream.qualityValue == 720 || description.contains("720", true) -> 1
             stream.qualityValue in 1..719 || sdResolution.containsMatchIn(description) -> 2
@@ -120,9 +130,9 @@ object MoonCatSourcePolicy {
         }
     }
 
-    /** Retain English/unknown fallbacks when advertised Hindi files fail readiness checks. */
-    fun playbackCandidates(streams: List<Stream>, language: String = "hi"): List<Stream> =
-        rank(streams, language).filter { !it.isExternal() && languageTier(it, language) < 3 }
+    /** Language is a preference, never a requirement: retain the original-language fallback. */
+    fun playbackCandidates(streams: List<Stream>, language: String = "hi", allow4k: Boolean = false): List<Stream> =
+        rank(streams, language, allow4k).filter { !it.isExternal() }
 
     /** Keep both free HTTP hosts and torrent swarms in the bounded race, plus language fallbacks. */
     fun probePool(streams: List<Stream>, slot: Int, language: String): List<Stream> {
@@ -152,8 +162,8 @@ object MoonCatSourcePolicy {
 
     private data class Ranked(val stream: Stream, val language: Int, val quality: Int, val release: Int, val seeders: Int)
 
-    fun rank(streams: List<Stream>, preferredLanguage: String? = null): List<Stream> =
-        streams.asSequence().filter { suitable(it) }.map { stream ->
+    fun rank(streams: List<Stream>, preferredLanguage: String? = null, allow4k: Boolean = false): List<Stream> =
+        streams.asSequence().filter { suitable(it, allow4k = allow4k) }.map { stream ->
             Ranked(stream, if (preferredLanguage == null) 0 else languageTier(stream, preferredLanguage),
                 qualityTier(stream), releaseTier(stream), advertisedSeeders(stream))
         }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.quality }

@@ -204,7 +204,7 @@ internal fun PlayerRuntimeController.loadSourceStreams(forceRefresh: Boolean) {
     val isResume = !forceRefresh && !targetChanged && requestKey == sourceStreamsCacheRequestKey && hasCachedPayload && !sourceStreamsFetchCompleted
     sourceStreamsScope?.cancel()
     sourceStreamsJob = null
-    val newScope = kotlinx.coroutines.CoroutineScope(scope.coroutineContext + kotlinx.coroutines.SupervisorJob())
+    val newScope = kotlinx.coroutines.CoroutineScope(scope.coroutineContext + kotlinx.coroutines.SupervisorJob(scope.coroutineContext[kotlinx.coroutines.Job]))
     sourceStreamsScope = newScope
     sourceChipErrorDismissJob?.cancel()
     sourceStreamsJob = newScope.launch {
@@ -310,7 +310,7 @@ internal fun PlayerRuntimeController.loadSourceStreams(forceRefresh: Boolean) {
                     _uiState.update {
                         it.copy(
                             isLoadingSourceStreams = false,
-                            sourceStreamsError = result.message
+                            sourceStreamsError = if (it.sourceAllStreams.isEmpty()) result.message else null
                         )
                     }
                 }
@@ -985,8 +985,8 @@ internal fun PlayerRuntimeController.switchToSourceStream(
             error = null,
             currentStreamName = stream.name ?: stream.addonName,
             currentStreamUrl = playbackUrl,
-            currentStreamInfoHash = stream.infoHash ?: stream.clientResolve?.infoHash,
-            currentStreamFileIdx = stream.clientResolve?.fileIdx,
+            currentStreamInfoHash = stream.getEffectiveInfoHash(),
+            currentStreamFileIdx = stream.getEffectiveFileIdx(),
             currentStreamAddonName = stream.addonName,
             audioTracks = emptyList(),
             serverAudioTracks = emptyList(),
@@ -1100,8 +1100,8 @@ private fun PlayerRuntimeController.switchToTorrentSourceStream(
             error = null,
             currentStreamName = stream.name ?: stream.addonName,
             currentStreamUrl = "",
-            currentStreamInfoHash = stream.infoHash ?: stream.clientResolve?.infoHash,
-            currentStreamFileIdx = stream.clientResolve?.fileIdx,
+            currentStreamInfoHash = stream.getEffectiveInfoHash(),
+            currentStreamFileIdx = stream.getEffectiveFileIdx(),
             currentStreamAddonName = stream.addonName,
             audioTracks = emptyList(),
             serverAudioTracks = emptyList(),
@@ -1239,7 +1239,7 @@ internal fun PlayerRuntimeController.loadStreamsForEpisode(video: Video, forceRe
     episodeStreamsScope?.cancel()
     episodeStreamsScope = null
     episodeStreamsJob = null
-    val newScope = kotlinx.coroutines.CoroutineScope(scope.coroutineContext + kotlinx.coroutines.SupervisorJob())
+    val newScope = kotlinx.coroutines.CoroutineScope(scope.coroutineContext + kotlinx.coroutines.SupervisorJob(scope.coroutineContext[kotlinx.coroutines.Job]))
     episodeStreamsScope = newScope
     episodeStreamsJob = newScope.launch {
         episodeStreamsCacheRequestKey = requestKey
@@ -1317,7 +1317,7 @@ internal fun PlayerRuntimeController.loadStreamsForEpisode(video: Video, forceRe
                     _uiState.update {
                         it.copy(
                             isLoadingEpisodeStreams = false,
-                            episodeStreamsError = result.message
+                            episodeStreamsError = if (it.episodeAllStreams.isEmpty()) result.message else null
                         )
                     }
                 }
@@ -1595,8 +1595,8 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(
             currentEpisodeTitle = currentEpisodeTitle,
             currentStreamName = stream.name ?: stream.addonName,
             currentStreamUrl = playbackUrl,
-            currentStreamInfoHash = stream.infoHash ?: stream.clientResolve?.infoHash,
-            currentStreamFileIdx = stream.clientResolve?.fileIdx,
+            currentStreamInfoHash = stream.getEffectiveInfoHash(),
+            currentStreamFileIdx = stream.getEffectiveFileIdx(),
             currentStreamAddonName = stream.addonName,
             audioTracks = emptyList(),
             serverAudioTracks = emptyList(),
@@ -1710,8 +1710,8 @@ private fun PlayerRuntimeController.switchToEpisodeStreamCommon(
             currentEpisodeTitle = currentEpisodeTitle,
             currentStreamName = stream.name ?: stream.addonName,
             currentStreamUrl = "",
-            currentStreamInfoHash = stream.infoHash ?: stream.clientResolve?.infoHash,
-            currentStreamFileIdx = stream.clientResolve?.fileIdx,
+            currentStreamInfoHash = stream.getEffectiveInfoHash(),
+            currentStreamFileIdx = stream.getEffectiveFileIdx(),
             currentStreamAddonName = stream.addonName,
             audioTracks = emptyList(),
             serverAudioTracks = emptyList(),

@@ -782,13 +782,13 @@ class MetaDetailsViewModel @Inject constructor(
                         is NetworkResult.Error -> {
                             // 2) Fallback: try originating addon if meta addons failed
                             val preferred = preferredAddonBaseUrl?.takeIf { it.isNotBlank() }
-                            val preferredMeta: Meta? = preferred?.let { baseUrl ->
+                            val preferredMeta: Meta? = preferred?.let { baseUrl -> withTimeoutOrNull(2_500L) {
                                 when (val fallbackResult = metaRepository.getMeta(addonBaseUrl = baseUrl, type = itemType, id = metaLookupId)
                                     .first { it !is NetworkResult.Loading }) {
                                     is NetworkResult.Success -> fallbackResult.data
                                     else -> null
                                 }
-                            }
+                            } }
 
                             if (preferredMeta != null) {
                                 applyMetaWithEnrichment(preferredMeta)
@@ -807,13 +807,13 @@ class MetaDetailsViewModel @Inject constructor(
             } else {
                 // Original: prefer catalog addon
                 val preferred = preferredAddonBaseUrl?.takeIf { it.isNotBlank() }
-                val preferredMeta: Meta? = preferred?.let { baseUrl ->
+                val preferredMeta: Meta? = preferred?.let { baseUrl -> withTimeoutOrNull(2_500L) {
                     when (val result = metaRepository.getMeta(addonBaseUrl = baseUrl, type = itemType, id = metaLookupId)
                         .first { it !is NetworkResult.Loading }) {
                         is NetworkResult.Success -> result.data
                         else -> null
                     }
-                }
+                } }
 
                 if (preferredMeta != null) {
                     applyMetaWithEnrichment(preferredMeta)
@@ -1000,25 +1000,35 @@ class MetaDetailsViewModel @Inject constructor(
 
     private suspend fun applyMetaWithEnrichment(meta: Meta) {
         if (!isServerItem) loadMoreLikeThisAsync(meta)
-        val enriched = if (isServerItem) meta else enrichMeta(meta)
-
-        syncEffectiveContentId(enriched)
-        val cachedNextToWatch = metaDetailsSessionState.getNextToWatch(
+        syncEffectiveContentId(meta)
+        val initialNext = metaDetailsSessionState.getNextToWatch(
             profileId = profileManager.activeProfileId.value,
             progressSource = traktSettingsDataStore.watchProgressSource.value.name,
             contentId = _effectiveContentId.value,
-            contentType = enriched.apiType
-        )?.resolveForMeta(enriched)
+            contentType = meta.apiType
+        )?.resolveForMeta(meta)
+        applyMeta(meta, initialNext)
+        // Artwork, credits and episode descriptions enhance a usable page; they
+        // must not hold the title/Play button behind a full-screen spinner.
+        val enriched = if (isServerItem) meta else withTimeoutOrNull(4_000L) { enrichMeta(meta) } ?: meta
 
-        applyMeta(
-            meta = enriched,
-            initialNextToWatch = cachedNextToWatch
-        )
+        syncEffectiveContentId(enriched)
+        if (enriched != meta) {
+            // Keep the selected season and avoid restarting trailers/comments.
+            _uiState.update { state ->
+                if (state.meta?.id != meta.id) state else state.copy(
+                    meta = enriched,
+                    episodesForSeason = getEpisodesForSeason(enriched, state.selectedSeason)
+                )
+            }
+        }
 
         val contentId = _effectiveContentId.value
 
         // Wait for remote progress provider (Simkl/Trakt) to finish initial load.
-        watchProgressRepository.observeRemoteProgressLoaded().first { it }
+        withTimeoutOrNull(2_000L) {
+            watchProgressRepository.observeRemoteProgressLoaded().first { it }
+        }
 
         // After remote is loaded, getAllEpisodeProgress may start with an onStart{emptyMap()}
         // then emit real data. Take the first non-empty emission, or fallback to empty after timeout.

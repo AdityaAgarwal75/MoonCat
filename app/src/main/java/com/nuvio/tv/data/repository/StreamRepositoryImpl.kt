@@ -359,7 +359,7 @@ class StreamRepositoryImpl @Inject constructor(
                     val suitableResult = result.copy(
                         streams = result.streams.filter {
                             com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it,
-                                if (type == "series" || type == "tv") 2_000_000_000L else 7_000_000_000L)
+                                if (type == "series" || type == "tv") 2_000_000_000L else 7_000_000_000L, allow4k = true)
                         }
                     )
                     val checkingResult = localDebridAvailabilityService.markChecking(listOf(suitableResult)).firstOrNull() ?: suitableResult

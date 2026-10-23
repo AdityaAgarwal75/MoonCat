@@ -19,6 +19,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -68,7 +70,9 @@ class CatalogRepositoryImpl @Inject constructor(
             "Fetching catalog addonId=$addonId addonName=$addonName type=$type catalogId=$catalogId skip=$skip skipStep=$skipStep supportsSkip=$supportsSkip url=$url"
         )
 
-        when (val result = safeApiCall(context) { api.getCatalog(url) }) {
+        when (val result = kotlinx.coroutines.withTimeoutOrNull(8_000L) {
+            safeApiCall(context) { api.getCatalog(url) }
+        } ?: NetworkResult.Error("Catalogue provider timed out. Retry to refresh this shelf.")) {
             is NetworkResult.Success -> {
                 val rawItemCount = result.data.metas.size
                 val posterPattern = layoutPreferenceDataStore.customPosterUrlPattern
@@ -114,7 +118,7 @@ class CatalogRepositoryImpl @Inject constructor(
             }
             NetworkResult.Loading -> { /* Already emitted */ }
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     private fun buildCatalogUrl(
         baseUrl: String,

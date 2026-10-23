@@ -116,4 +116,13 @@ class MoonCatSourceRaceTest {
             assertEquals("/segment.ts", server.takeRequest().path)
         }
     }
+    @Test fun `4k is never a slow fallback even when it is the only source`() {
+        val uhd = source("English 2160p WEB-DL", "https://example.com/4k")
+        val hd = source("English 1080p WEB-DL", "https://example.com/hd")
+        assertNull(MoonCatSourceRace.selectMeasured(listOf(uhd to 7_000_000.0), "en", true))
+        assertEquals(hd, MoonCatSourceRace.selectMeasured(listOf(uhd to 7_000_000.0, hd to 2_000_000.0), "en", true))
+        assertEquals(uhd, MoonCatSourceRace.selectMeasured(listOf(uhd to 10_000_000.0, hd to 2_000_000.0), "en", true))
+        assertNull(MoonCatSourceRace.selectMeasured(listOf(uhd to 10_000_000.0), "en", false))
+    }
+
 }

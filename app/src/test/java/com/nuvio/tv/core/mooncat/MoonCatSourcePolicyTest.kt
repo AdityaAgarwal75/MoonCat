@@ -48,11 +48,11 @@ class MoonCatSourcePolicyTest {
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
     }
 
-    @Test fun `playback candidates keep English fallback after Hindi and exclude other audio`() {
+    @Test fun `playback candidates keep original language fallbacks after Hindi and English`() {
         val hi = source("720p Hindi")
         val en = source("1080p English")
         val unknown = source("1080p")
-        assertEquals(listOf(hi, en, unknown), MoonCatSourcePolicy.playbackCandidates(
+        assertEquals(listOf(hi, en, unknown, source("1080p French")), MoonCatSourcePolicy.playbackCandidates(
             listOf(en, unknown, source("1080p French"), hi)))
     }
 
@@ -119,4 +119,19 @@ class MoonCatSourcePolicyTest {
         assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.Japanese.WEB-DL.mkv", null, "hi", 7_000_000_000L))
         assertTrue(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HIN.ENG.WEB-DL.mkv", 2_000_000_000L, "hi", 7_000_000_000L))
     }
+    @Test fun `catalogue preferences never exclude playable audio languages`() {
+        assertTrue(MoonCatSourcePolicy.suitable(source("Tamil Telugu 1080p")))
+        assertTrue(MoonCatSourcePolicy.suitable(source("Japanese 1080p")))
+        assertTrue(MoonCatSourcePolicy.suitable(source("Tamil Hindi English 1080p")))
+        assertTrue(MoonCatSourcePolicy.suitable(source("1080p")))
+    }
+    @Test fun `4k requires explicit opt in and direct source while8k and remux stay excluded`() {
+        val uhd = source("English 2160p WEB-DL 5 GB", "https://example.com/4k")
+        assertFalse(MoonCatSourcePolicy.suitable(uhd))
+        assertTrue(MoonCatSourcePolicy.suitable(uhd, allow4k = true))
+        assertFalse(MoonCatSourcePolicy.suitable(uhd.copy(url = null, infoHash = "abc"), allow4k = true))
+        assertFalse(MoonCatSourcePolicy.suitable(source("English 8K", "https://example.com/8k"), allow4k = true))
+        assertFalse(MoonCatSourcePolicy.suitable(source("English 4K REMUX", "https://example.com/remux"), allow4k = true))
+    }
+
 }
