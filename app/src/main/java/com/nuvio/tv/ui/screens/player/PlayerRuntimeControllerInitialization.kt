@@ -1588,7 +1588,10 @@ internal fun PlayerRuntimeController.initializePlayer(
                             return
                         }
 
-                        val responseCode = (error.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+                        val responseCode = error.findCause<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>()?.responseCode
+                        // Rebuilding a decoder cannot repair a forbidden/missing file.
+                        // Go to a different source before the engine/retry ladder.
+                        if (responseCode in setOf(401, 403, 404, 410) && tryAlternativeSource(detailedError)) return
                         if (responseCode == 416 && !hasRetriedCurrentStreamAfter416) {
                             retryCurrentStreamFromStartAfter416()
                             return
