@@ -70,7 +70,9 @@ class CatalogRepositoryImpl @Inject constructor(
             "Fetching catalog addonId=$addonId addonName=$addonName type=$type catalogId=$catalogId skip=$skip skipStep=$skipStep supportsSkip=$supportsSkip url=$url"
         )
 
-        when (val result = safeApiCall(context) { api.getCatalog(url) }) {
+        when (val result = kotlinx.coroutines.withTimeoutOrNull(8_000L) {
+            safeApiCall(context) { api.getCatalog(url) }
+        } ?: NetworkResult.Error("Catalogue provider timed out. Retry to refresh this shelf.")) {
             is NetworkResult.Success -> {
                 val rawItemCount = result.data.metas.size
                 val posterPattern = layoutPreferenceDataStore.customPosterUrlPattern

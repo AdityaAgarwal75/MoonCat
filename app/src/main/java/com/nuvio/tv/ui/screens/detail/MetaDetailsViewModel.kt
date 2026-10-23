@@ -782,13 +782,13 @@ class MetaDetailsViewModel @Inject constructor(
                         is NetworkResult.Error -> {
                             // 2) Fallback: try originating addon if meta addons failed
                             val preferred = preferredAddonBaseUrl?.takeIf { it.isNotBlank() }
-                            val preferredMeta: Meta? = preferred?.let { baseUrl ->
+                            val preferredMeta: Meta? = preferred?.let { baseUrl -> withTimeoutOrNull(2_500L) {
                                 when (val fallbackResult = metaRepository.getMeta(addonBaseUrl = baseUrl, type = itemType, id = metaLookupId)
                                     .first { it !is NetworkResult.Loading }) {
                                     is NetworkResult.Success -> fallbackResult.data
                                     else -> null
                                 }
-                            }
+                            } }
 
                             if (preferredMeta != null) {
                                 applyMetaWithEnrichment(preferredMeta)
@@ -807,13 +807,13 @@ class MetaDetailsViewModel @Inject constructor(
             } else {
                 // Original: prefer catalog addon
                 val preferred = preferredAddonBaseUrl?.takeIf { it.isNotBlank() }
-                val preferredMeta: Meta? = preferred?.let { baseUrl ->
+                val preferredMeta: Meta? = preferred?.let { baseUrl -> withTimeoutOrNull(2_500L) {
                     when (val result = metaRepository.getMeta(addonBaseUrl = baseUrl, type = itemType, id = metaLookupId)
                         .first { it !is NetworkResult.Loading }) {
                         is NetworkResult.Success -> result.data
                         else -> null
                     }
-                }
+                } }
 
                 if (preferredMeta != null) {
                     applyMetaWithEnrichment(preferredMeta)

@@ -204,7 +204,8 @@ class MetaRepositoryImpl @Inject constructor(
         val deferred = inFlightMeta.getOrPut(cacheKey) {
             repositoryScope.async {
                 try {
-                    val response = api.getMeta(url)
+                    val response = kotlinx.coroutines.withTimeoutOrNull(4_000L) { api.getMeta(url) }
+                        ?: throw java.io.IOException("Metadata provider timed out")
                     if (response.isSuccessful) {
                         val metaDto = response.body()?.meta ?: return@async null
                         val meta = metaDto.toDomain(context.getString(R.string.episodes_episode))
@@ -330,7 +331,8 @@ class MetaRepositoryImpl @Inject constructor(
                 attemptedAddonNames += addon.displayName
                 val url = buildMetaUrl(addon.baseUrl, requestedType, id)
                 try {
-                    val response = api.getMeta(url)
+                    val response = kotlinx.coroutines.withTimeoutOrNull(4_000L) { api.getMeta(url) }
+                        ?: throw java.io.IOException("Metadata provider timed out")
                     if (response.isSuccessful) {
                         val metaDto = response.body()?.meta
                         if (metaDto != null) {
@@ -418,7 +420,8 @@ class MetaRepositoryImpl @Inject constructor(
                         loopAddonNames += addon.displayName
                         attempted++
                         try {
-                            val response = api.getMeta(url)
+                            val response = kotlinx.coroutines.withTimeoutOrNull(4_000L) { api.getMeta(url) }
+                        ?: throw java.io.IOException("Metadata provider timed out")
                             if (response.isSuccessful) {
                                 val metaDto = response.body()?.meta
                                 if (metaDto != null) {
@@ -540,7 +543,8 @@ class MetaRepositoryImpl @Inject constructor(
         val deferred = inFlightPrimaryMeta.getOrPut(cacheKey) {
             repositoryScope.async {
                 try {
-                    val response = api.getMeta(url)
+                    val response = kotlinx.coroutines.withTimeoutOrNull(4_000L) { api.getMeta(url) }
+                        ?: throw java.io.IOException("Metadata provider timed out")
                     if (response.isSuccessful) {
                         val metaDto = response.body()?.meta ?: return@async null
                         val meta = metaDto.toDomain(context.getString(R.string.episodes_episode))

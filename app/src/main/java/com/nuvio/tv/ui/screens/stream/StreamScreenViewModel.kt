@@ -331,6 +331,10 @@ class StreamScreenViewModel @Inject constructor(
         when (event) {
             is StreamScreenEvent.OnAddonFilterSelected -> filterByAddon(event.addonName)
             is StreamScreenEvent.OnStreamSelected -> {
+                autoPlayHandledForSession = true
+                directAutoPlayFlowEnabledForSession = false
+                updateUiStateIfChanged { it.copy(autoPlayStream = null, autoPlayPlaybackInfo = null,
+                    isDirectAutoPlayFlow = false, showDirectAutoPlayOverlay = false) }
                 cancelStreamsLoad()
             }
             StreamScreenEvent.OnAutoPlayConsumed -> {
