@@ -370,7 +370,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
                 loadStreams(forceRefresh = true)
             }
-            StreamScreenEvent.OnRetry -> loadStreams()
+            StreamScreenEvent.OnRetry -> loadStreams(forceRefresh = true)
             StreamScreenEvent.OnBackPress -> { /* Handle in screen */ }
             StreamScreenEvent.OnResume -> {
                 hostInForeground.value = true
@@ -403,6 +403,12 @@ class StreamScreenViewModel @Inject constructor(
     }
 
     private fun loadStreams(forceRefresh: Boolean = false) {
+        if (forceRefresh) {
+            failedAutoPlayIdentities.clear()
+            autoPlayHandledForSession = manualSelection
+            directAutoPlayModeInitializedForSession = false
+            directAutoPlayFlowEnabledForSession = false
+        }
         streamRepository.setLocalPluginSearchPaused(false)
         streamLoadScope?.cancel()
         streamLoadScope = null
@@ -473,7 +479,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            if (!autoPlayHandledForSession && failedAutoPlayIdentities.isEmpty() && playerSettings.streamReuseLastLinkEnabled) {
+            if (!forceRefresh && !autoPlayHandledForSession && failedAutoPlayIdentities.isEmpty() && playerSettings.streamReuseLastLinkEnabled) {
                 val cached = streamLinkCacheDataStore.getValid(
                     contentKey = streamCacheKey,
                     maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
