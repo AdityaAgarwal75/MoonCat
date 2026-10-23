@@ -1,0 +1,29 @@
+name: MoonCat release smoke evidence validation
+on:
+  push:
+    branches: [fix/fire-tv-autoplay-v1.0.7]
+    paths: ['.github/workflows/mooncat-smoke-evidence.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify package-scoped crash detector
+        run: PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
+      - name: Download original optimized-release device evidence
+        run: gh run download 39976999771 --repo "$GITHUB_REPOSITORY" --name MoonCat-release-smoke --dir smoke-evidence
+      - name: Verify Home, title Play page, remote return and live process
+        run: |
+          python3 scripts/validate_emulator_evidence.py smoke-evidence
+          cat >> "$GITHUB_STEP_SUMMARY" <<'REPORT'
+          Optimized app source: 417ce377cc936a3c502c1380849680fa27fe39da.
+          Original device run: https://github.com/AdityaAgarwal75/MoonCat/actions/runs/39976999771
+          The original all-process crash assertion flagged the emulator's com.android.tv DVR database crash. Package-scoped checks verify MoonCat remained alive, rendered Home and a title Play page, returned Home, and had no MoonCat Java/native crash or ANR. Screenshots, UI XML and logcat are preserved in the original artifact. This evidence does not certify sustained playback or physical Fire TV performance.
+          REPORT
