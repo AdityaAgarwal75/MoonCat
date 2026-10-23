@@ -4,17 +4,19 @@
 
 A remote-first media discovery and playback app for Android TV and Amazon Fire TV, derived from [NuvioTV](https://github.com/NuvioMedia/NuvioTV).
 
-[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Audit](docs/TV-AUDIT.md)
+[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Latest audit](docs/TV-AUDIT-v1.0.7.md)
 
 ## What it does
 
-- Browse movies, series, anime, Hindi and regional discovery shelves.
+- Browse movies, series and anime with Hindi/English Home discovery shelves.
 - Explore 11 studio collections with 11,655 catalogue entries and poster grids.
 - Search installed Stremio-compatible providers concurrently, with per-request deadlines.
-- Prefer Hindi and 1080p, retain English/720p/SD fallbacks, and select sources using bounded readiness probes.
+- Prefer Hindi/English and HD, keep playable language/quality fallbacks, and try alternative sources after real playback failures.
 - Use the official YouTube catalogue, configured addons, or personal media servers.
 - Browse 20 Indian news channels, grouped by language.
+- Optional **4K on fast servers** in Playback settings: hardware 4K support plus a larger speed sample; otherwise use HD.
 - Resume viewing, switch audio/subtitles, and check GitHub for updates.
+- A missing Hindi track never automatically replaces a playing file. Explicit language-source search stays available in the audio menu.
 
 Sources are supplied by independent services. Catalogue entries do not guarantee a playable source, a specific dub, or access in every region. External watch links open separately from embedded video streams.
 
