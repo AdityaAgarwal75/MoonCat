@@ -8,6 +8,8 @@
 - Move catalogue parsing/mapping to a background dispatcher. Enable R8 release optimization while retaining app/JNI/plugin reflection contracts.
 - Parent source-discovery scopes to their screen/player lifecycle; avoid leaked discovery work. Preserve available results when a different provider reports an error.
 
+The new cream-kitten/lilac-crescent identity replaces the launcher icons, themed wordmarks, TV banners, splash and profile background. Large backgrounds use density-independent resources.
+
 Validation is recorded in the associated GitHub Actions run: TV unit suite, release-script tests, asset checks, optimized release assembly, vital lint, APK identity/signature checks. These checks do not measure frame times or certify physical Fire TV playback. Providers can return unavailable links or content without a dub; the app cannot manufacture either.
 
 When original signing secrets are unavailable this release is a separate MoonCat Preview app. An older Preview signed by a different CI key may need removal before installation; the original MoonCat app can remain installed. Preview settings are separate.

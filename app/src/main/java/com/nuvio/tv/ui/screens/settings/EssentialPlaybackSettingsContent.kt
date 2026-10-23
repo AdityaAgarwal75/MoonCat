@@ -83,6 +83,16 @@ fun EssentialPlaybackSettingsContent(
                         }
                     )
                     SettingsToggleRow(
+                        title = "4K on fast servers",
+                        subtitle = "Requires a 4K-capable device and a fast verified direct source. Falls back to HD.",
+                        checked = settings?.allow4kWhenFast == true,
+                        onToggle = {
+                            val current = settings ?: return@SettingsToggleRow
+                            coroutineScope.launch { viewModel.setAllow4kWhenFast(!current.allow4kWhenFast) }
+                        },
+                        enabled = settings != null
+                    )
+                    SettingsToggleRow(
                         title = stringResource(R.string.essential_autoplay_next_episode),
                         subtitle = stringResource(R.string.essential_autoplay_next_episode_subtitle),
                         checked = settings?.streamAutoPlayNextEpisodeEnabled == true,

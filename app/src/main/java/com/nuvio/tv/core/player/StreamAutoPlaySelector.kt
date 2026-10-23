@@ -126,7 +126,10 @@ object StreamAutoPlaySelector {
 
         return when (mode) {
             StreamAutoPlayMode.MANUAL -> null
-            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull { isPlayable(it) }
+            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull {
+                isPlayable(it) && (!it.isTorrent() || it.debridCacheStatus == null ||
+                    it.debridCacheStatus.state == StreamDebridCacheState.CACHED)
+            } ?: candidateStreams.firstOrNull { isPlayable(it) }
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
  
