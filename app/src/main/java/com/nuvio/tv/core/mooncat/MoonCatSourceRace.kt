@@ -22,6 +22,8 @@ import okhttp3.Response
  */
 object MoonCatSourceRace {
     const val MAX_CANDIDATES = 8
+    const val MIN_4K_BYTES_PER_SECOND = 8_000_000.0
+    private const val UHD_SAMPLE_BYTES = 2 * 1024 * 1024
     private val client = OkHttpClient.Builder().dispatcher(Dispatcher().apply {
         maxRequests = MAX_CANDIDATES
         maxRequestsPerHost = MAX_CANDIDATES
@@ -31,8 +33,8 @@ object MoonCatSourceRace {
     // Addon headers may contain vendor-specific credentials; never redirect those requests.
     private val credentialClient = client.newBuilder().followRedirects(false).build()
 
-    suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi"): Stream? = coroutineScope {
-        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage).distinctBy {
+    suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", allow4k: Boolean = false): Stream? = coroutineScope {
+        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k).distinctBy {
             it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}"
         }.take(MAX_CANDIDATES)
         val results = Channel<Pair<Stream, Sample>?>(Channel.UNLIMITED)
@@ -44,22 +46,28 @@ object MoonCatSourceRace {
         }
         val samples = mutableListOf<Pair<Stream, Sample>>()
         try {
-            repeat(jobs.size) {
-                val result = results.receive()
-                if (result != null) {
-                    samples.add(result)
+            var received = 0
+            while (received < jobs.size && samples.isEmpty()) {
+                results.receive()?.let(samples::add)
+                received++
+            }
+            withTimeoutOrNull(350L) {
+                while (received < jobs.size) {
+                    results.receive()?.let(samples::add)
+                    received++
                 }
             }
-            selectMeasured(samples.map { (stream, sample) -> stream to sample.bytesPerSecond }, preferredLanguage)
+            selectMeasured(samples.map { (stream, sample) -> stream to sample.bytesPerSecond }, preferredLanguage, allow4k)
         } finally {
             jobs.forEach { it.cancel() }
         }
     }
 
     /** A short sample is a readiness hint. Prefer HD with headroom, then rank language/quality. */
-    internal fun selectMeasured(samples: List<Pair<Stream, Double>>, language: String = "hi"): Stream? {
+    internal fun selectMeasured(samples: List<Pair<Stream, Double>>, language: String = "hi", allow4k: Boolean = false): Stream? {
         val usable = samples.filter { (stream, speed) ->
-            MoonCatSourcePolicy.suitable(stream) && speed.isFinite() && speed > 0
+            MoonCatSourcePolicy.suitable(stream, allow4k = allow4k) && speed.isFinite() && speed > 0 &&
+                (!MoonCatSourcePolicy.is4k(stream) || (allow4k && speed >= MIN_4K_BYTES_PER_SECOND))
         }
         val withHeadroom = usable.filter { (stream, speed) ->
             speed >= if (MoonCatSourcePolicy.qualityTier(stream) == 0) 1_000_000.0 else 500_000.0
@@ -72,13 +80,13 @@ object MoonCatSourceRace {
         )?.first
     }
 
-    internal fun validContentRange(header: String?, contentLength: Long): Long? {
+    internal fun validContentRange(header: String?, contentLength: Long, maxBytes: Int = 65536): Long? {
         val match = header?.let { Regex("bytes 0-(\\d+)/(\\d+)", RegexOption.IGNORE_CASE).matchEntire(it.trim()) }
             ?: return null
         val end = match.groupValues[1].toLongOrNull() ?: return null
         val total = match.groupValues[2].toLongOrNull() ?: return null
         val expected = end + 1
-        return expected.takeIf { end in 0..65535 && total > end && (contentLength < 0 || contentLength == expected) }
+        return expected.takeIf { end in 0 until maxBytes.toLong() && total > end && (contentLength < 0 || contentLength == expected) }
     }
 
     private data class Sample(val bytes: Int, val elapsedNanos: Long, val playlist: String? = null) {
@@ -118,6 +126,7 @@ object MoonCatSourceRace {
     }
 
     private suspend fun probeResource(stream: Stream, url: String): Sample? = suspendCancellableCoroutine { continuation ->
+        val sampleLimit = if (MoonCatSourcePolicy.is4k(stream)) UHD_SAMPLE_BYTES else 65536
         val canSendHeaders = url.toHttpUrlOrNull()?.host == stream.getStreamUrl()?.toHttpUrlOrNull()?.host
         val request = runCatching {
             Request.Builder().url(url).apply {
@@ -126,7 +135,7 @@ object MoonCatSourceRace {
                     stream.behaviorHints?.proxyHeaders?.request?.forEach { (key, value) -> header(key, value) }
                 }
                 header("Accept-Encoding", "identity")
-                header("Range", "bytes=0-65535")
+                header("Range", "bytes=0-${sampleLimit - 1}")
             }.build()
         }.getOrNull()
         if (request == null) { continuation.resume(null); return@suspendCancellableCoroutine }
@@ -144,7 +153,7 @@ object MoonCatSourceRace {
                         val type = it.header("Content-Type").orEmpty().lowercase()
                         val body = it.body
                         val range = it.header("Content-Range")
-                        val expectedRangeBytes = if (it.code == 206) validContentRange(range, body?.contentLength() ?: -1L) else null
+                        val expectedRangeBytes = if (it.code == 206) validContentRange(range, body?.contentLength() ?: -1L, sampleLimit) else null
                         val invalidRange = it.code == 206 && expectedRangeBytes == null
                         if (!it.isSuccessful || invalidRange || type.contains("text/html") || type.contains("application/json") || body == null) {
                             null
@@ -154,13 +163,13 @@ object MoonCatSourceRace {
                             val buffer = ByteArray(8192)
                             val captured = java.io.ByteArrayOutputStream()
                             var total = 0
-                            while (total < 65536) {
-                                val read = input.read(buffer, 0, minOf(buffer.size, 65536 - total))
+                            while (total < sampleLimit) {
+                                val read = input.read(buffer, 0, minOf(buffer.size, sampleLimit - total))
                                 if (read <= 0) break
                                 captured.write(buffer, 0, read)
                                 total += read
                             }
-                            if (total == 0 || (expectedRangeBytes != null && total.toLong() != expectedRangeBytes)) null
+                            if (total == 0 || (MoonCatSourcePolicy.is4k(stream) && total < UHD_SAMPLE_BYTES) || (expectedRangeBytes != null && total.toLong() != expectedRangeBytes)) null
                             else {
                                 val prefix = captured.toByteArray()
                                 val isPlaylist = prefix.take(7).toByteArray().toString(Charsets.UTF_8) == "#EXTM3U"

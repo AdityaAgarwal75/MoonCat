@@ -130,7 +130,13 @@ internal fun HomeViewModel.observeTmdbSettingsPipeline() {
 internal fun HomeViewModel.observeInstalledAddonsPipeline() {
     viewModelScope.launch {
         combine(addonRepository.getInstalledAddons(), serverCatalog.addons) { installed, servers ->
-            installed.enabledAddons() + servers
+            // Apply to persisted manifests too, so upgrades remove old regional
+            // shelves without requiring addon reinstall or a settings reset.
+            (installed.enabledAddons() + servers).map { addon ->
+                addon.copy(catalogs = addon.catalogs.filterNot {
+                    com.nuvio.tv.core.catalog.MoonCatHomeCatalogPolicy.hidden(it.id, it.name)
+                })
+            }
         }
             .distinctUntilChanged()
             .collectLatest { addons ->

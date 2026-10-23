@@ -786,7 +786,13 @@ internal fun PlayerRuntimeController.initializePlayer(
                 }
 
                 // Limit adaptive manifests too, even when an addon omitted its resolution label.
-                setParameters(buildUponParameters().setMaxVideoSize(1920, 1080)
+                val permit4k = playerSettings.allow4kWhenFast &&
+                    com.nuvio.tv.core.mooncat.MoonCatDeviceCapabilities.supports4k &&
+                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4kLabel(
+                        listOfNotNull(streamName, currentFilename, _uiState.value.currentStreamName).joinToString(" ")
+                    )
+                setParameters(buildUponParameters()
+                    .setMaxVideoSize(if (permit4k) 3840 else 1920, if (permit4k) 2160 else 1080)
                     .setExceedVideoConstraintsIfNecessary(false).setForceHighestSupportedBitrate(false))
                 if (preferredAudioLanguages.isNotEmpty()) {
                     setParameters(buildUponParameters().setPreferredAudioLanguages(*preferredAudioLanguages.toTypedArray()))
@@ -1606,6 +1612,9 @@ internal fun PlayerRuntimeController.initializePlayer(
                             return
                         }
                         if (tryServerFallback()) {
+                            return
+                        }
+                        if (tryAlternativeSource(detailedError)) {
                             return
                         }
 

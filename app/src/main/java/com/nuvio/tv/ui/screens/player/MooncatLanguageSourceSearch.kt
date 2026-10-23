@@ -12,7 +12,6 @@ import kotlinx.coroutines.delay
 @Composable
 internal fun MooncatLanguageSourceSearch(
     language: String?,
-    automatic: Boolean = false,
     state: PlayerUiState,
     onEvent: (PlayerEvent) -> Unit,
     onFinished: () -> Unit
@@ -23,7 +22,7 @@ internal fun MooncatLanguageSourceSearch(
         val requested = language ?: return@LaunchedEffect
         fun notice(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
         onEvent(PlayerEvent.OnDismissTransientOverlay)
-        onEvent(if (automatic) PlayerEvent.OnFindPreferredAudioSources else PlayerEvent.OnShowSourcesPanel)
+        onEvent(PlayerEvent.OnShowSourcesPanel)
         notice("Searching for ${languageName(requested)} audio…")
         // Allow source fetching to start, then wait a bounded period for addon responses.
         delay(600)
@@ -52,11 +51,6 @@ internal fun MooncatLanguageSourceSearch(
                 MoonCatSourcePolicy.suitable(stream) && (stream.getStreamUrl() != null || stream.isTorrent())
         }.distinctBy { it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }
         val remaining = MoonCatSourcePolicy.rank(candidates).take(7).toMutableList()
-        // Automatic repair must always be able to restore the playing file on a false audio label.
-        if (automatic && originalSource == null) {
-            onFinished()
-            return@LaunchedEffect
-        }
         if (remaining.isEmpty()) {
             notice("No source advertises ${languageName(requested)} audio. You can browse Sources.")
             onFinished()
@@ -104,7 +98,7 @@ internal fun MooncatLanguageSourceSearch(
         } else {
             notice("This source did not expose playable ${languageName(requested)} audio. Choose another source.")
         }
-        if (!automatic) onEvent(PlayerEvent.OnShowSourcesPanel)
+        onEvent(PlayerEvent.OnShowSourcesPanel)
         onFinished()
     }
 }

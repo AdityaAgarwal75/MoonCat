@@ -19,6 +19,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Dispatchers
 import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -114,7 +116,7 @@ class CatalogRepositoryImpl @Inject constructor(
             }
             NetworkResult.Loading -> { /* Already emitted */ }
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     private fun buildCatalogUrl(
         baseUrl: String,

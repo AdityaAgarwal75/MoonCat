@@ -149,3 +149,7 @@
 
 -dontwarn java.beans.ConstructorProperties
 -dontwarn java.beans.Transient
+
+# Keep app reflection contracts and extension-visible names while allowing R8 to
+# optimize app code. Third-party/JNI compatibility rules above remain in force.
+-keep,allowoptimization class com.nuvio.tv.** { *; }

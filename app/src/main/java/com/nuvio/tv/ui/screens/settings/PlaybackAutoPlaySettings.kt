@@ -139,6 +139,13 @@ internal fun PlaybackStreamSelectionSection(
         }
     }
 
+    SettingsToggleRow(
+        title = "4K on fast servers",
+        subtitle = "Only on a 4K-capable device after a larger speed check. Otherwise use 1080p.",
+        checked = settings.allow4kWhenFast,
+        onToggle = { onUpdate { setAllow4kWhenFast(!settings.allow4kWhenFast) } }
+    )
+
     val timeoutSeconds = settings.streamAutoPlayTimeoutSeconds
     SliderSettingsItem(
         title = stringResource(R.string.autoplay_timeout_title),

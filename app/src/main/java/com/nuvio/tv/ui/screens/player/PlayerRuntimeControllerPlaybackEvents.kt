@@ -1686,6 +1686,8 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             filterSourceStreamsByAddon(event.addonName)
         }
         is PlayerEvent.OnSourceStreamSelected -> {
+            sourceRecoveryJob?.cancel()
+            sourceRecoveryJob = null
             switchToSourceStream(event.stream)
         }
         PlayerEvent.OnDismissTransientOverlay -> {
