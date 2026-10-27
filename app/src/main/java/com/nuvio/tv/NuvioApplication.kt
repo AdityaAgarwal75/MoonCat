@@ -128,6 +128,14 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
         }
 
         val imageLoaderRef: () -> ImageLoader = { SingletonImageLoader.get(this) }
+        // Coil asks for a cache strategy per fetch. Reuse one scheduler/client rather
+        // than creating an independent dispatcher and coroutine scope for every poster.
+        val imageCacheStrategy by lazy {
+            StaleWhileRevalidateCacheStrategy(
+                revalidationClient = { imageOkHttpClient },
+                imageLoaderProvider = imageLoaderRef,
+            )
+        }
 
         return ImageLoader.Builder(this)
             .components {
@@ -141,12 +149,7 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
                 add(
                     coil3.network.okhttp.OkHttpNetworkFetcherFactory(
                         callFactory = { imageOkHttpClient },
-                        cacheStrategy = {
-                            StaleWhileRevalidateCacheStrategy(
-                                revalidationClient = { imageOkHttpClient },
-                                imageLoaderProvider = imageLoaderRef,
-                            )
-                        },
+                        cacheStrategy = { imageCacheStrategy },
                     )
                 )
             }

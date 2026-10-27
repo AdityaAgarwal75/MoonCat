@@ -43,15 +43,18 @@ internal fun PlayerRuntimeController.showSeekOverlayTemporarily() {
 }
 
 internal fun PlayerRuntimeController.selectAudioTrack(trackIndex: Int) {
-    if (_uiState.value.audioTracks.firstOrNull { it.index == trackIndex }?.isSupported == false) return
+    _uiState.value.audioTracks.firstOrNull { it.index == trackIndex && it.isSupported } ?: return
+    // A deliberate supported-track selection supersedes a previous recovery step that muted audio.
+    isAudioDisabledForCurrentPlayback = false
+    audioDisabledForcedStreamUrls.remove(currentStreamUrl)
     logSwitchTrace(
         stage = "select-audio-track",
         message = "trackIndex=$trackIndex usingMpv=${isUsingMpvEngine()} " +
-            "track=${_uiState.value.audioTracks.getOrNull(trackIndex)?.let { "${it.language}/${it.name}/${it.trackId}" } ?: "none"}"
+            "track=${_uiState.value.audioTracks.firstOrNull { it.index == trackIndex }?.let { "${it.language}/${it.name}/${it.trackId}" } ?: "none"}"
     )
     if (isUsingMpvEngine()) {
         val wasPlaying = isPlaybackCurrentlyPlaying()
-        val track = _uiState.value.audioTracks.getOrNull(trackIndex)
+        val track = _uiState.value.audioTracks.firstOrNull { it.index == trackIndex }
         val trackId = track?.trackId?.toIntOrNull()
         val changed = trackId != null && mpvView?.selectAudioTrackById(trackId) == true
         if (changed) {
@@ -71,12 +74,12 @@ internal fun PlayerRuntimeController.selectAudioTrack(trackIndex: Int) {
                         val override = TrackSelectionOverride(trackGroup.mediaTrackGroup, i)
                         player.trackSelectionParameters = player.trackSelectionParameters
                             .buildUpon()
+                            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
                             .setOverrideForType(override)
                             .build()
-                        if (hasRenderedFirstFrame) {
-                            val pos = player.currentPosition
-                            if (pos > 0) player.seekTo((pos - 1).coerceAtLeast(0))
-                        }
+                        // Media3 switches the renderer in place. A forced seek here flushes video,
+                        // stalls Fire TV playback and can race the audio renderer transition.
                         return
                     }
                     currentAudioIndex++
@@ -87,7 +90,8 @@ internal fun PlayerRuntimeController.selectAudioTrack(trackIndex: Int) {
 }
 
 internal fun PlayerRuntimeController.rememberAudioSelection(trackIndex: Int) {
-    val selectedTrack = _uiState.value.audioTracks.getOrNull(trackIndex) ?: return
+    val selectedTrack = _uiState.value.audioTracks.firstOrNull { it.index == trackIndex }
+        ?.takeIf { it.isSupported } ?: return
     logSwitchTrace(
         stage = "user-remember-audio",
         message = "trackIndex=$trackIndex lang=${selectedTrack.language} name=${selectedTrack.name} id=${selectedTrack.trackId}"

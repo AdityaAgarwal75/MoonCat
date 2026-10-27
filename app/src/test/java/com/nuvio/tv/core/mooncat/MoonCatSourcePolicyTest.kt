@@ -88,6 +88,16 @@ class MoonCatSourcePolicyTest {
         assertEquals(listOf(english), MoonCatSourcePolicy.forPreferredLanguage(listOf(english, unknown), "hi"))
         assertEquals(listOf(english), MoonCatSourcePolicy.forPreferredLanguage(listOf(english), "hi"))
     }
+    @Test fun `explicit audio inspection does not hide large or remux HD dubs`() {
+        val largeDub = source("Hindi 1080p REMUX 18 GB", "https://cdn.example/large.mkv")
+        assertFalse(MoonCatSourcePolicy.suitable(largeDub))
+        assertTrue(MoonCatSourcePolicy.canInspectAudio(largeDub))
+        assertEquals(listOf(largeDub), MoonCatSourcePolicy.audioInspectionCandidates(listOf(largeDub), "hi"))
+        assertFalse(MoonCatSourcePolicy.canInspectAudio(source("Hindi 2160p 4K")))
+        assertFalse(MoonCatSourcePolicy.canInspectAudio(source("Hindi 8K 4320p"), allow4k = true))
+        assertTrue(MoonCatSourcePolicy.canInspectAudio(source("Hindi 4K 2160p"), allow4k = true))
+    }
+
     @Test fun `decimal and binary size units differ`() {
         assertEquals(7_000_000_000L, MoonCatSourcePolicy.sizeBytes(source("7 GB")))
         assertEquals(7_516_192_768L, MoonCatSourcePolicy.sizeBytes(source("7 GiB")))

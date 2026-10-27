@@ -1,7 +1,6 @@
 package com.nuvio.tv.data.repository
 
 import android.content.Context
-import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.plugin.PluginManager
@@ -122,6 +121,34 @@ class StreamRepositoryPluginIsolationTest {
         coVerify(exactly = 0) { harness.addonRepository.fetchAddon(any()) }
     }
 
+    @Test
+    fun `raw candidates arrive before slow optional availability checks`() = runBlocking {
+        val harness = newHarness(emptyList())
+        val waiting = CompletableDeferred<List<AddonStreams>>()
+        coEvery { harness.availability.annotateCachedAvailability(any()) } coAnswers { waiting.await() }
+        val first = withTimeout(1_000) {
+            harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
+                .first { it is NetworkResult.Success }
+        } as NetworkResult.Success
+        assertEquals(1, first.data.single().streams.size)
+        waiting.complete(emptyList())
+        Unit
+    }
+
+    @Test
+    fun `discovery preserves dubbed candidates regardless of device autoplay policy`() = runTest {
+        val harness = newHarness(emptyList())
+        coEvery { harness.api.getStreams(any()) } returns Response.success(
+            StreamResponseDto(listOf(StreamDto(
+                name = "Movie 2160p REMUX Hindi English 25GB",
+                url = "https://stream.example/movie.mkv"
+            )))
+        )
+        val result = harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
+            .toList().last() as NetworkResult.Success
+        assertEquals("Movie 2160p REMUX Hindi English 25GB", result.data.single().streams.single().name)
+    }
+
     private fun newHarness(enabledScrapers: List<ScraperInfo>): Harness {
         val addon = compatibleAddon()
         val api = mockk<AddonApi>()
@@ -152,10 +179,6 @@ class StreamRepositoryPluginIsolationTest {
         val tmdbService = mockk<TmdbService>(relaxed = true)
         val debridSettingsDataStore = mockk<DebridSettingsDataStore>()
         every { debridSettingsDataStore.settings } returns flowOf(DebridSettings())
-        val presentation = mockk<DebridStreamPresentation>()
-        every { presentation.apply(any(), any<DebridSettings>(), any(), any()) } answers {
-            firstArg<List<AddonStreams>>()
-        }
         val availability = mockk<LocalDebridAvailabilityService>()
         coEvery { availability.markChecking(any()) } coAnswers {
             firstArg<List<AddonStreams>>()
@@ -173,7 +196,6 @@ class StreamRepositoryPluginIsolationTest {
                 profileManager = profileManager,
                 debridSettingsDataStore = debridSettingsDataStore,
                 tmdbService = tmdbService,
-                debridStreamPresentation = presentation,
                 localDebridAvailabilityService = availability,
                 serverStreams = mockk {
                     every { isNativeRequest(any()) } returns false
@@ -183,7 +205,8 @@ class StreamRepositoryPluginIsolationTest {
             ),
             api = api,
             tmdbService = tmdbService,
-            addonRepository = addonRepository
+            addonRepository = addonRepository,
+            availability = availability
         )
     }
 
@@ -229,6 +252,7 @@ class StreamRepositoryPluginIsolationTest {
         val repository: StreamRepositoryImpl,
         val api: AddonApi,
         val tmdbService: TmdbService,
-        val addonRepository: AddonRepository
+        val addonRepository: AddonRepository,
+        val availability: LocalDebridAvailabilityService
     )
 }

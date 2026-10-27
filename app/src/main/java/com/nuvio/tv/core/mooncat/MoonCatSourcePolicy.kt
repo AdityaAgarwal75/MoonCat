@@ -11,12 +11,6 @@ object MoonCatSourcePolicy {
     private val above4k = Regex("""(?i)(\b(?:4320|1440)p\b|7680x4320|\b8[ ._-]?k\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
     private val ultraHd = Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""")
-    private val subtitleSuffix = Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+""")
-    private val subtitlePrefix = Regex("""(?i)\b(?:hindi|hin|english|eng|japanese|jpn)\s+(?:subtitles?|subs?|subbed)\b""")
-    private val hindiAudio = Regex("""(?i)(\b(?:hindi|hin|hi)\b|हिन्दी|हिंदी|🇮🇳)""")
-    private val englishAudio = Regex("""(?i)(\b(?:english|eng|en)\b|🇬🇧|🇺🇸)""")
-    private val japaneseAudio = Regex("""(?i)(\b(?:japanese|jpn|ja)\b|🇯🇵)""")
-    private val otherAudio = Regex("""(?i)\b(tamil|telugu|kannada|malayalam|bengali|french|spanish|korean|chinese|russian|german)\b""")
     private val cleanRelease = Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""")
     private val webRelease = Regex("""(?i)\b(?:web[ ._-]?rip|hdtv)\b""")
     private val seederIcon = Regex("""(?:👤|👥|🌱)\s*(\d[\d,]*)""")
@@ -54,6 +48,22 @@ object MoonCatSourcePolicy {
             !excluded.containsMatchIn(label) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
     }
 
+    /** Explicit language inspection caps resolution only; release names/size never hide a dub. */
+    fun canInspectAudio(stream: Stream, allow4k: Boolean = false): Boolean {
+        val label = text(stream)
+        val exceeds4k = Regex("""(?i)(\b4320p\b|7680x4320|\b8[ ._-]?k\b)""").containsMatchIn(label)
+        return if (allow4k) stream.qualityValue <= 2160 && !exceeds4k
+            else stream.qualityValue <= 1080 && !aboveHd.containsMatchIn(label) && !(qualityTier(stream) == 3 && ultraHd.containsMatchIn(label))
+    }
+
+    /** Unlike autoplay ranking this retains large HD files and imperfect release descriptions. */
+    fun audioInspectionCandidates(streams: List<Stream>, language: String): List<Stream> =
+        streams.filter { canInspectAudio(it) && !it.isExternal() }.sortedWith(
+            compareBy<Stream> { languageTier(it, language) }
+                .thenBy { qualityTier(it) }.thenBy { if (it.isTorrent()) 1 else 0 }
+                .thenBy { releaseTier(it) }.thenByDescending { advertisedSeeders(it) }
+        )
+
     fun reusableRelease(name: String, filename: String?, size: Long?, preferredLanguage: String, maxFileBytes: Long): Boolean {
         val cached = Stream(name = name, title = filename, description = null, url = null, ytId = null,
             infoHash = null, fileIdx = null, externalUrl = null, behaviorHints = null, addonName = "Cached", addonLogo = null)
@@ -78,31 +88,16 @@ object MoonCatSourcePolicy {
         return streams.filter { languageHints(it).isEmpty() }
     }
 
-    fun normalizeLanguage(language: String): String? = when (language.lowercase().substringBefore('-').trim()) {
-        "hi", "hin", "hindi", "हिन्दी", "हिंदी" -> "hi"
-        "en", "eng", "english" -> "en"
-        "ja", "jpn", "japanese" -> "ja"
-        else -> null
-    }
+    fun normalizeLanguage(language: String): String? =
+        com.nuvio.tv.domain.playback.AudioLanguagePolicy.normalize(language)
 
     fun advertisesAudio(stream: Stream, language: String): Boolean =
         normalizeLanguage(language)?.let { it in languageHints(stream) } == true
 
-    fun languageHints(stream: Stream): Set<String> {
-        // A provider's structured audio list and filename are stronger than subtitle flags.
-        val parsed = stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
-        val audioText = text(stream).lineSequence().map { line ->
-            line.replace(subtitleSuffix, " ")
-                .replace(subtitlePrefix, " ")
-        }.joinToString(" ")
-        return buildSet {
-            parsed.forEach { normalizeLanguage(it)?.let(::add) }
-            if (hindiAudio.containsMatchIn(audioText)) add("hi")
-            if (englishAudio.containsMatchIn(audioText)) add("en")
-            if (japaneseAudio.containsMatchIn(audioText)) add("ja")
-            if (otherAudio.containsMatchIn(audioText)) add("other")
-            if (parsed.isNotEmpty() && isEmpty()) add("other")
-        }
+    fun languageHints(stream: Stream): Set<String> = buildSet {
+        stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
+            .mapNotNull(com.nuvio.tv.domain.playback.AudioLanguagePolicy::normalize).forEach(::add)
+        addAll(com.nuvio.tv.domain.playback.AudioLanguagePolicy.advertisedLanguages(text(stream)))
     }
 
     fun is4kLabel(label: String): Boolean = fourK.containsMatchIn(label)

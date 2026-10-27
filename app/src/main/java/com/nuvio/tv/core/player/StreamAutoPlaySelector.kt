@@ -74,7 +74,24 @@ object StreamAutoPlaySelector {
         preferredAudioLanguage: String? = null,
         allow4k: Boolean = false
     ): Stream? {
-        if (streams.isEmpty()) return null
+        return selectAutoPlayCandidates(streams, mode, regexPattern, source, installedAddonNames, selectedAddons, selectedPlugins, preferredBingeGroup, preferBingeGroupInSelection, bingeGroupOnly, preferredAudioLanguage, allow4k).firstOrNull()
+    }
+
+    fun selectAutoPlayCandidates(
+        streams: List<Stream>,
+        mode: StreamAutoPlayMode,
+        regexPattern: String,
+        source: StreamAutoPlaySource,
+        installedAddonNames: Set<String>,
+        selectedAddons: Set<String>,
+        selectedPlugins: Set<String>,
+        preferredBingeGroup: String? = null,
+        preferBingeGroupInSelection: Boolean = false,
+        bingeGroupOnly: Boolean = false,
+        preferredAudioLanguage: String? = null,
+        allow4k: Boolean = false
+    ): List<Stream> {
+        if (streams.isEmpty()) return emptyList()
 
         val effectiveSource = if (!AppFeaturePolicy.pluginsEnabled && source == StreamAutoPlaySource.ENABLED_PLUGINS_ONLY) {
             StreamAutoPlaySource.INSTALLED_ADDONS_ONLY
@@ -97,7 +114,7 @@ object StreamAutoPlaySelector {
                 selectedPlugins.isEmpty() || stream.addonName in selectedPlugins
             }
         }
-        if (candidateStreams.isEmpty()) return null
+        if (candidateStreams.isEmpty()) return emptyList()
 
         // Binge group matching takes priority over mode and source filters — even in MANUAL mode,
         // a persisted binge group should auto-play without showing the picker.
@@ -113,29 +130,34 @@ object StreamAutoPlaySelector {
                     stream.behaviorHints?.bingeGroup == targetBingeGroup &&
                     isPlayable(stream)
             }
-            if (bingeGroupMatch != null) return bingeGroupMatch
+            if (bingeGroupMatch != null) return if (mode == StreamAutoPlayMode.MANUAL || bingeGroupOnly) listOf(bingeGroupMatch)
+                else listOf(bingeGroupMatch) + candidateStreams.filter { it != bingeGroupMatch && isPlayable(it) }
             // When bingeGroupOnly is set (MANUAL mode with only binge-group
             // preference enabled), don't fall back to a non-matching stream —
-            // return null so the caller shows the stream picker instead.
-            if (bingeGroupOnly) return null
+            // return emptyList() so the caller shows the stream picker instead.
+            if (bingeGroupOnly) return emptyList()
         }
 
-        if (bingeGroupOnly) return null
+        if (bingeGroupOnly) return emptyList()
 
-        if (mode == StreamAutoPlayMode.MANUAL) return null
+        if (mode == StreamAutoPlayMode.MANUAL) return emptyList()
 
         return when (mode) {
-            StreamAutoPlayMode.MANUAL -> null
-            StreamAutoPlayMode.FIRST_STREAM -> candidateStreams.firstOrNull {
-                isPlayable(it) && (!it.isTorrent() || it.debridCacheStatus == null ||
-                    it.debridCacheStatus.state == StreamDebridCacheState.CACHED)
-            } ?: candidateStreams.firstOrNull { isPlayable(it) }
+            StreamAutoPlayMode.MANUAL -> emptyList()
+            StreamAutoPlayMode.FIRST_STREAM -> {
+                val playable = candidateStreams.filter { isPlayable(it) }
+                val (ready, pending) = playable.partition {
+                    !it.isTorrent() || it.debridCacheStatus == null ||
+                        it.debridCacheStatus.state == StreamDebridCacheState.CACHED
+                }
+                ready + pending
+            }
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()
  
                 // Try to compile the user regex
                 val userRegex = runCatching { Regex(pattern, RegexOption.IGNORE_CASE) }.getOrNull()
-                if (userRegex == null) return null
+                if (userRegex == null) return emptyList()
 
                 // Auto-extract exclusion patterns from negative lookaheads
                 val exclusionMatches = Regex("\\(\\?![^)]*?\\(([^)]+)\\)").findAll(pattern)
@@ -174,8 +196,8 @@ object StreamAutoPlaySelector {
                     true
                 }
 
-                if (matchingStreams.isEmpty()) return null
-                matchingStreams.firstOrNull { isPlayable(it) }
+                if (matchingStreams.isEmpty()) return emptyList()
+                matchingStreams
             }
 
         }

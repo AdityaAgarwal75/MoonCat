@@ -452,6 +452,10 @@ class PlayerRuntimeController(
     internal var startupLoadingReportJob: Job? = null
     internal var sourceStreamsJob: Job? = null
     internal var sourceRecoveryJob: Job? = null
+    internal var audioLanguageSearchJob: Job? = null
+    internal var audioLanguageResolveJob: Job? = null
+    internal var requestedAudioLanguageForPlayback: String? = null
+    internal var audioLanguageSearchGeneration = 0L
     internal val sourceFailoverSession = com.nuvio.tv.core.player.SourceFailoverSession()
     internal var sourceBadgeJob: Job? = null
     internal var sourceFilterFullList: List<com.nuvio.tv.domain.model.Stream> = emptyList()
@@ -779,6 +783,7 @@ class PlayerRuntimeController(
     }
 
     fun onCleared() {
+        cancelAudioLanguageSearch()
         sourceRecoveryJob?.cancel()
         playerSession.close()
         stopServerPlayback()

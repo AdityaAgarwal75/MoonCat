@@ -213,12 +213,12 @@ internal fun PlayerRuntimeController.initializePlayer(
             // Re-apply on every (re)initialization without dropping the user's tweak on the current stream.
             applyEffectiveAudioDelay()
             cachedDecoderPriority = playerSettings.decoderPriority
-            val preferredAudioLanguages = resolvePreferredAudioLanguages(
+            val preferredAudioLanguages = (listOfNotNull(requestedAudioLanguageForPlayback) + resolvePreferredAudioLanguages(
                 preferredAudioLanguage = playerSettings.preferredAudioLanguage,
                 secondaryPreferredAudioLanguage = playerSettings.secondaryPreferredAudioLanguage,
                 deviceLanguages = resolveDeviceAudioLanguages(),
                 contentOriginalLanguage = contentLanguage
-            )
+            )).distinct()
             mpvPreferredAudioLanguages = preferredAudioLanguages
             mpvHi10pGnextSoftwareFallbackEnabledSetting =
                 playerSettings.mpvHi10pGnextSoftwareFallbackEnabled
