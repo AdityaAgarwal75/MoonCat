@@ -28,4 +28,8 @@ Prompts: premium cream anime kitten with violet eyes curled on a lilac crescent,
 
 ## Validation
 
-Pending final Android compilation and test results. Local asset checks and all 24 release-script tests passed on 27 October 2026. Physical Fire TV remote navigation, sustained playback and real-device dub switching remain unverified in this environment. CI/build results and APK identity will be recorded before delivery.
+Passed on 27 October 2026: the full Android TV unit suite, all 24 release-script tests, asset validation, optimized release assembly, vital lint, APK signature verification and packaged catalogue checks. [GitHub Actions evidence](https://github.com/AdityaAgarwal75/MoonCat/actions/runs/40456330691). Sixteen focused language/menu/identity tests also passed locally. The local full build exceeded available host memory; the successful final build ran on GitHub.
+
+Published APK: [MoonCat 1.1.0 Preview Fire TV](https://github.com/AdityaAgarwal75/MoonCat/releases/download/v1.1.0-rc.1/MoonCat-v1.1.0-Preview-FireTV.apk), 59,481,188 bytes. Package `dev.mooncat.tv.preview`, version `1.1.0` / `10009`, source revision `40da546155e94bfba82fa990a8750c12bdf5fe5c`. SHA-256: `ab5661fdcf980828f2c1295f11738414ac28744fe799146919218a7273905e71`.
+
+Physical Fire TV remote navigation, sustained playback and real-device dub switching remain unverified in this environment. The original production signing identity remains unavailable; this is a separately signed Preview app.
