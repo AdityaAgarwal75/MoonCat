@@ -108,16 +108,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Publish signed v2 release
-        if: github.event_name == 'push' && github.ref_type == 'tag' && steps.identity.outputs.preview == 'false'
+        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/work/mooncat-v2') && steps.identity.outputs.preview == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -1)"
-          test "$GITHUB_REF_NAME" = "v$VERSION"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v$VERSION"; fi
           test ! -z "$VERSION"
           FLAGS=()
           if [[ "$VERSION" == *-beta* || "$VERSION" == *-alpha* || "$VERSION" == *-rc* ]]; then FLAGS+=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" dist/* --target "$GITHUB_SHA" --title "MoonCat $VERSION" --notes-file docs/RELEASE-v2.md "${FLAGS[@]}"
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "MoonCat $VERSION" --notes-file docs/RELEASE-v2.md "${FLAGS[@]}"
       - name: Remove signing material
         if: always()
         run: rm -f local.properties "$RUNNER_TEMP/mooncat-release.jks"

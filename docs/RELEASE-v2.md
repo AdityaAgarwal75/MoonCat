@@ -1,7 +1,7 @@
-# MoonCat v2
+# MoonCat v2.0.0-beta.2
 
-New slice-of-life artwork and loading animation; progressive home catalogue rows; Torrentio and TorrentsDB movie/episode discovery; bounded parallel HTTP and torrent readiness checks; a 4 GB HD-episode autoplay limit; and 4K torrent eligibility on capable devices.
+This update uses Torrentio for addon streams, hides sources with a reported size above 4 GB, and defaults new theme settings to AMOLED. Torrent file size is checked when available. Sources without known size may still appear. Existing theme choices are preserved.
 
-Readiness samples are not a guarantee of sustained throughput. Provider responses, available peers, audio tracks and playback depend on the title and network. Manual source selection retains the provider's returned choices.
+Playback readiness checks, home catalogue improvements, and the v2 artwork are included. Playback depends on the source, available peers, and network. This beta has not been verified on every TV device.
 
-This v2 package is a separate installation from earlier MoonCat versions because their original signing identity was unavailable. Profiles and settings do not migrate automatically. Later v2 updates require the same v2 signing key and package name and must be confirmed in Android's installer.
+Earlier pre-v2 MoonCat installs use a different signing identity. This release updates an existing v2 installation and requires confirmation in the Android installer.
