@@ -1,34 +1,34 @@
-<p align="center"><img src="branding/mooncat-logo.png" width="160" alt="MoonCat violet moon and cat logo"></p>
+<p align="center">
+  <img src="branding/v2/mascot.webp" width="190" alt="MoonCat kitten on a crescent moon">
+</p>
+<h1 align="center">MoonCat TV</h1>
+<p align="center">A cozy home for movies, series, and anime on your TV.</p>
+<p align="center">
+  <a href="https://github.com/AdityaAgarwal75/MoonCat/releases">Download MoonCat</a> ·
+  <a href="https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml">Build status</a> ·
+  <a href="docs/MOONCAT-BUILD.md">Build guide</a>
+</p>
 
-# MoonCat TV
+<p align="center"><img src="branding/v2/scene.webp" width="800" alt="MoonCat in a cozy anime-style scene"></p>
 
-A remote-first media discovery and playback app for Android TV and Amazon Fire TV, derived from [NuvioTV](https://github.com/NuvioMedia/NuvioTV).
+## Made for the big screen
 
-[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Latest audit](docs/PLAYBACK-ENGINE-v1.1.0.md)
+MoonCat is a remote-first Android TV and Fire TV app for discovering and playing movies, series, and anime. It is derived from [NuvioTV](https://github.com/NuvioMedia/NuvioTV).
 
-## What it does
+- Browse curated collections and resume what you were watching.
+- Find streams through Torrentio, with parallel readiness checks and manual source selection.
+- Hide identified 4K sources and files reported above 4 GB; sources with missing metadata may still appear.
+- Use the AMOLED theme, audio and subtitle controls, and GitHub update checks.
 
-- Browse movies, series and anime with Hindi/English Home discovery shelves.
-- Explore 11 studio collections with 11,655 catalogue entries and poster grids.
-- Search installed Stremio-compatible providers concurrently, with per-request deadlines.
-- Prefer Hindi/English and HD, keep playable language/quality fallbacks, and try alternative sources after real playback failures.
-- Use the official YouTube catalogue, configured addons, or personal media servers.
-- Browse 20 Indian news channels, grouped by language.
-- Optional **4K on fast servers** in Playback settings: hardware 4K support plus a larger speed sample; otherwise use HD.
-- Resume viewing, switch audio/subtitles, and check GitHub for updates.
-- A missing Hindi track never automatically replaces a playing file. Explicit language-source search stays available in the audio menu.
+Sources come from independent services; availability, playback speed, and language options vary. A source search timeout does not guarantee that playback will start within the same time.
 
-Sources are supplied by independent services. Catalogue entries do not guarantee a playable source, a specific dub, or access in every region. External watch links open separately from embedded video streams.
+## Install or update
 
-## Install the right APK
+Download the Fire TV APK from [GitHub Releases](https://github.com/AdityaAgarwal75/MoonCat/releases). The v2 beta installs separately from pre-v2 MoonCat because the earlier signing key was unavailable; profiles and settings do not automatically move over. Later v2 releases use the same signing identity and can be installed as updates, subject to Android confirmation. Beta versions require the beta update channel.
 
-The TV target is Android 7.0+ and `armeabi-v7a`, including Fire TV Stick 3rd generation. A regular update must retain `dev.mooncat.tv` and the original signing certificate. **MoonCat Preview** uses `dev.mooncat.tv.preview` and installs alongside it when trusted signing is unavailable. Profiles and settings are separate in Preview.
+## Build and verify
 
-The `mobile/` directory is an earlier experimental app, not a feature-complete phone version of this TV app.
-
-## Build and validate
-
-Use JDK 17 and Android SDK 36. The Gradle wrapper is pinned to 8.13.
+Use JDK 17 and Android SDK 36:
 
 ```bash
 python3 scripts/validate_tv_assets.py
@@ -36,8 +36,8 @@ python3 scripts/validate_tv_assets.py
 ./gradlew :app:assembleFullRelease
 ```
 
-See the [build guide](docs/MOONCAT-BUILD.md) for signing, test fixtures and isolated preview builds. APKs and checksums are release assets; source control does not contain split APK uploads. One active workflow builds and validates the checked-in source. Historical workflow examples live in `docs/archive/workflows/` and cannot run.
+See the [build guide](docs/MOONCAT-BUILD.md) and [release notes](docs/RELEASE-v2.md). The experimental `mobile/` directory is not the Fire TV app.
 
-## Attribution
+## Credits
 
-Distributed under [GPL-3.0](LICENSE). See [NOTICE.md](NOTICE.md) for upstream attribution and [source research](docs/SOURCES.md) for provider references.
+Distributed under [GPL-3.0](LICENSE). See [NOTICE.md](NOTICE.md) for upstream attribution.
