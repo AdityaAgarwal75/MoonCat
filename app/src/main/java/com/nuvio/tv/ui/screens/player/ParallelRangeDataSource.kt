@@ -313,7 +313,8 @@ internal class ParallelRangeDataSource(
             for (index in indices) {
                 evictFuture(session, index, poolCap)
             }
-            session.futures.clear()
+            // A concurrent scheduler may publish after the snapshot; it will
+            // observe abandoned and evict its own future, releasing its buffer.
             session.lastTouch.clear()
             session.inFlight.clear()
         }
@@ -1137,6 +1138,7 @@ internal class ParallelRangeDataSource(
 
     private fun ensureChunkScheduled(chunkIndex: Long) {
         val activeSession = session ?: return
+        if (activeSession.abandoned.get()) return
 
         enforceSessionCap(activeSession, protectIndex = chunkIndex, poolCap = maxPoolSize)
         activeSession.futures.computeIfAbsent(chunkIndex) {
@@ -1166,6 +1168,11 @@ internal class ParallelRangeDataSource(
                 }
             }
             future
+        }
+        // Teardown can snapshot the map while computeIfAbsent is still publishing
+        // this future. Retire any future published after the session was abandoned.
+        if (activeSession.abandoned.get()) {
+            evictFuture(activeSession, chunkIndex, maxPoolSize)
         }
     }
 
