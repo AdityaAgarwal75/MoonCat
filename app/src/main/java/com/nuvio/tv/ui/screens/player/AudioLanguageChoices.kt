@@ -1,6 +1,7 @@
 package com.nuvio.tv.ui.screens.player
 
 import java.util.Locale
+import com.nuvio.tv.domain.playback.AudioLanguagePolicy
 
 /** Only embedded languages are offered; a filename is not evidence of an audio track. */
 internal object AudioLanguageChoices {
@@ -18,31 +19,24 @@ internal object AudioLanguageChoices {
         return actual + missing
     }
 
-    fun languageKey(language: String?): String = when (val code = language
-        ?.trim()?.lowercase(Locale.ROOT)?.replace('_', '-')?.substringBefore('-')) {
-        "hin", "hindi" -> "hi"
-        "eng", "english" -> "en"
-        "jpn", "japanese" -> "ja"
-        null, "", "und" -> "und"
-        else -> code
-    }
+    fun languageKey(language: String?): String = AudioLanguagePolicy.normalize(language) ?: "und"
+
+    fun trackLanguage(track: TrackInfo): String =
+        AudioLanguagePolicy.language(track.language, track.name) ?: "und"
 
     fun choices(tracks: List<TrackInfo>): List<TrackInfo> = tracks
         .filter { it.isSupported }
-        .groupBy { languageKey(it.language) }
-        .map { (language, variants) ->
-            // Avoid commentary/descriptive tracks and expensive multichannel decoding on a Stick.
-            val best = variants.maxByOrNull { track ->
-                val description = track.name.lowercase(Locale.ROOT)
-                (if (description.contains("commentary") || description.contains("description")) -100 else 0) +
-                    (if (track.channelCount == 2) 30 else if ((track.channelCount ?: 0) <= 6) 10 else 0) +
-                    (if (track.codec?.lowercase(Locale.ROOT)?.contains("aac") == true) 5 else 0)
-            }!!
+        .groupBy { track -> trackLanguage(track).takeUnless { it == "und" } ?: "und:${track.index}" }
+        .map { (_, variants) ->
+            val language = trackLanguage(variants.first())
+            val bestKey = AudioLanguagePolicy.matching(variants.map(TrackInfo::toAudioCandidate), language)
+                .firstOrNull()?.key ?: variants.first().index
+            val best = variants.first { it.index == bestKey }
             best.copy(language = language, name = when (language) {
                 "hi" -> "Hindi"
                 "en" -> "English"
                 "ja" -> "Japanese"
-                "und" -> "Original audio (language unknown)"
+                "und" -> "${best.name} · Track ${best.index + 1} (language unknown)"
                 else -> Locale.forLanguageTag(language).getDisplayLanguage(Locale.ENGLISH)
                     .takeIf { it.isNotBlank() } ?: language
             }, codec = null, channelCount = null, sampleRate = null)
@@ -51,6 +45,15 @@ internal object AudioLanguageChoices {
 
     fun selectedChoiceIndex(tracks: List<TrackInfo>, selectedIndex: Int, choices: List<TrackInfo>): Int {
         val selected = tracks.firstOrNull { it.index == selectedIndex } ?: return -1
-        return choices.firstOrNull { languageKey(it.language) == languageKey(selected.language) }?.index ?: -1
+        val selectedLanguage = trackLanguage(selected)
+        return choices.firstOrNull {
+            if (selectedLanguage == "und") it.index == selected.index
+            else trackLanguage(it) == selectedLanguage
+        }?.index ?: -1
     }
 }
+
+internal fun TrackInfo.toAudioCandidate() = AudioLanguagePolicy.Track(
+    key = index, language = language, label = name, supported = isSupported,
+    channels = channelCount, codec = codec, selected = isSelected
+)

@@ -4,7 +4,7 @@
 
 A remote-first media discovery and playback app for Android TV and Amazon Fire TV, derived from [NuvioTV](https://github.com/NuvioMedia/NuvioTV).
 
-[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Latest audit](docs/TV-AUDIT-v1.0.7.md)
+[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Latest audit](docs/PLAYBACK-ENGINE-v1.1.0.md)
 
 ## What it does
 

@@ -297,6 +297,7 @@ sealed class PlayerEvent {
     data object OnCommitPreviewSeek : PlayerEvent()
     data class OnSeekTo(val position: Long) : PlayerEvent()
     data class OnSelectAudioTrack(val index: Int) : PlayerEvent()
+    data class OnRequestAudioLanguage(val language: String) : PlayerEvent()
     data class OnSetAudioDelayMs(val delayMs: Int) : PlayerEvent()
     data class OnSetAudioAmplificationDb(val db: Int) : PlayerEvent()
     data class OnSetPersistAudioAmplification(val enabled: Boolean) : PlayerEvent()

@@ -31,10 +31,23 @@ class AudioLanguageChoicesTest {
         assertTrue(choices.drop(1).all { it.name.contains("Search sources") })
     }
 
+    @Test fun `container audio labels recover a missing language tag`() {
+        val choices = AudioLanguageChoices.choices(listOf(track(4, null, name = "Hindi AAC 2.0"), track(9, "und", name = "English EAC3")))
+        assertEquals(listOf("hi", "en"), choices.map { it.language })
+        assertEquals(listOf(4, 9), choices.map { it.index })
+    }
+
+    @Test fun `ambiguous multi audio track label is not proof of Hindi`() {
+        val choices = AudioLanguageChoices.choices(listOf(track(0, null, name = "Hindi English Dual Audio")))
+        assertEquals("und", choices.single().language)
+    }
+
     @Test fun `unknown stays unknown and absent languages are never invented`() {
         val choices = AudioLanguageChoices.choices(listOf(track(0, null), track(1, "und")))
-        assertEquals(1, choices.size)
-        assertTrue(choices.single().name.contains("unknown"))
+        assertEquals(2, choices.size)
+        assertTrue(choices.all { it.name.contains("unknown") })
+        assertEquals(0, AudioLanguageChoices.selectedChoiceIndex(listOf(track(0, null), track(1, "und")), 0, choices))
+        assertEquals(1, AudioLanguageChoices.selectedChoiceIndex(listOf(track(0, null), track(1, "und")), 1, choices))
         assertTrue(AudioLanguageChoices.choices(emptyList()).isEmpty())
     }
 }

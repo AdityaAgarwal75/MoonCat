@@ -1,6 +1,7 @@
 package com.nuvio.tv.core.mooncat
 
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.core.player.playbackRequestKey
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -34,9 +35,8 @@ object MoonCatSourceRace {
     private val credentialClient = client.newBuilder().followRedirects(false).build()
 
     suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", allow4k: Boolean = false): Stream? = coroutineScope {
-        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k).distinctBy {
-            it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}"
-        }.take(MAX_CANDIDATES)
+        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k)
+            .distinctBy { it.playbackRequestKey() }.take(MAX_CANDIDATES)
         val results = Channel<Pair<Stream, Sample>?>(Channel.UNLIMITED)
         val jobs = ranked.mapNotNull { stream ->
             val url = stream.getStreamUrl()?.takeIf {
@@ -63,7 +63,7 @@ object MoonCatSourceRace {
         }
     }
 
-    /** A short sample is a readiness hint. Prefer HD with headroom, then rank language/quality. */
+    /** A short sample is a readiness hint, not a sustained speed guarantee. */
     internal fun selectMeasured(samples: List<Pair<Stream, Double>>, language: String = "hi", allow4k: Boolean = false): Stream? {
         val usable = samples.filter { (stream, speed) ->
             MoonCatSourcePolicy.suitable(stream, allow4k = allow4k) && speed.isFinite() && speed > 0 &&
@@ -74,9 +74,9 @@ object MoonCatSourceRace {
         }
         return (withHeadroom.ifEmpty { usable }).minWithOrNull(
             compareBy<Pair<Stream, Double>> { MoonCatSourcePolicy.languageTier(it.first, language) }
+                .thenByDescending { it.second }
                 .thenBy { MoonCatSourcePolicy.qualityTier(it.first) }
                 .thenBy { MoonCatSourcePolicy.releaseTier(it.first) }
-                .thenByDescending { it.second }
         )?.first
     }
 

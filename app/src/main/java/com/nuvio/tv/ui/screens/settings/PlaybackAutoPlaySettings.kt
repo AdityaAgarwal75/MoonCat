@@ -140,8 +140,8 @@ internal fun PlaybackStreamSelectionSection(
     }
 
     SettingsToggleRow(
-        title = "4K on fast servers",
-        subtitle = "Only on a 4K-capable device after a larger speed check. Otherwise use 1080p.",
+        title = "Allow 4K sources",
+        subtitle = "Requires a 4K-capable device. Direct links and torrents must respond before autoplay.",
         checked = settings.allow4kWhenFast,
         onToggle = { onUpdate { setAllow4kWhenFast(!settings.allow4kWhenFast) } }
     )
@@ -167,21 +167,7 @@ internal fun PlaybackStreamSelectionSection(
         onToggle = { onUpdate { setPreloadNextEpisodeSources(!settings.preloadNextEpisodeSources) } }
     )
 
-    SettingsToggleRow(
-        title = stringResource(R.string.autoplay_reuse_last_link),
-        subtitle = stringResource(R.string.autoplay_reuse_last_link_sub),
-        checked = settings.streamReuseLastLinkEnabled,
-        onToggle = { onUpdate { setStreamReuseLastLinkEnabled(!settings.streamReuseLastLinkEnabled) } }
-    )
 
-    if (settings.streamReuseLastLinkEnabled) {
-        SettingsActionRow(
-            title = stringResource(R.string.autoplay_last_link_cache),
-            subtitle = null,
-            value = formatReuseCacheDuration(settings.streamReuseLastLinkCacheHours),
-            onClick = { onOpenDialog(PlaybackDialog.REUSE_LAST_LINK_CACHE) }
-        )
-    }
 }
 
 @Composable

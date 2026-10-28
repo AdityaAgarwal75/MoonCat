@@ -90,9 +90,19 @@ class AddonPreferences @Inject constructor(
         val marker = booleanPreferencesKey("mooncat_sources_added_v106")
         profileManager.profiles.value.map { it.id }.ifEmpty { listOf(1) }.forEach { profileId ->
             store(profileId).edit { prefs ->
+                val removeDbMarker = booleanPreferencesKey("mooncat_remove_torrentsdb_v2")
+                if (prefs[removeDbMarker] != true) {
+                    val current = getCurrentList(prefs, profileId)
+                    val retained = current.filterNot { url ->
+                        val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull()
+                        host == "torrentsdb.com" || host?.endsWith(".torrentsdb.com") == true
+                    }
+                    if (retained != current) prefs[orderedUrlsKey] = gson.toJson(retained)
+                    prefs[removeDbMarker] = true
+                }
                 if (prefs[marker] == true) return@edit
                 val urls = getCurrentList(prefs, profileId)
-                val providers = listOf("https://comet.elfhosted.com", "https://v3-channels.strem.io")
+                val providers = listOf("https://v3-channels.strem.io")
                 val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
                 if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
                 prefs[marker] = true
@@ -261,10 +271,6 @@ class AddonPreferences @Inject constructor(
         "https://opensubtitles-v3.strem.io",
         "https://anime-kitsu.strem.fun",
         "https://v3-channels.strem.io",
-        "https://comet.elfhosted.com",
-        "https://mediafusion.elfhosted.com",
-        "https://torrentsdb.com",
-        "https://hdhub.thevolecitor.qzz.io",
         if (profileId == 1) "https://torrentio.strem.fun/language=hindi"
         else "https://torrentio.strem.fun/language=english"
     )

@@ -1,7 +1,6 @@
 package com.nuvio.tv.data.repository
 
 import android.content.Context
-import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.plugin.PluginManager
@@ -37,7 +36,7 @@ import retrofit2.Response
 
 class StreamRepositoryPluginIsolationTest {
     @Test
-    fun `addon results arrive while plugin TMDB lookup is pending`() = runBlocking {
+    fun `allowed addon results arrive without launching other plugins`() = runBlocking {
         val harness = newHarness(listOf(compatibleScraper()))
         val tmdbResult = CompletableDeferred<String?>()
         coEvery { harness.tmdbService.ensureTmdbId("tt1341338", "movie") } coAnswers {
@@ -57,6 +56,7 @@ class StreamRepositoryPluginIsolationTest {
         assertEquals(listOf("Fast Addon"), groups.map { it.addonName })
         assertEquals(1, groups.single().streams.size)
         assertTrue(tmdbResult.isActive)
+        coVerify(exactly = 0) { harness.tmdbService.ensureTmdbId(any(), any()) }
         coVerify(exactly = 1) { harness.api.getStreams(any()) }
         tmdbResult.complete(null)
         Unit
@@ -98,7 +98,7 @@ class StreamRepositoryPluginIsolationTest {
         assertEquals(listOf("Fast Addon"), success.data.map { it.addonName })
         // Pins the URL too: the regression is not merely "one call happened", it is that the
         // stream request is the only request, built from the addon's own baseUrl.
-        coVerify(exactly = 1) { harness.api.getStreams("https://addon.example/stream/movie/tt1341338.json") }
+        coVerify(exactly = 1) { harness.api.getStreams("https://torrentio.strem.fun/stream/movie/tt1341338.json") }
         coVerify(exactly = 0) { harness.addonRepository.fetchAddon(any()) }
     }
 
@@ -122,8 +122,43 @@ class StreamRepositoryPluginIsolationTest {
         coVerify(exactly = 0) { harness.addonRepository.fetchAddon(any()) }
     }
 
-    private fun newHarness(enabledScrapers: List<ScraperInfo>): Harness {
-        val addon = compatibleAddon()
+    @Test
+    fun `raw candidates arrive before slow optional availability checks`() = runBlocking {
+        val harness = newHarness(emptyList())
+        val waiting = CompletableDeferred<List<AddonStreams>>()
+        coEvery { harness.availability.annotateCachedAvailability(any()) } coAnswers { waiting.await() }
+        val first = withTimeout(1_000) {
+            harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
+                .first { it is NetworkResult.Success }
+        } as NetworkResult.Success
+        assertEquals(1, first.data.single().streams.size)
+        waiting.complete(emptyList())
+        Unit
+    }
+
+    @Test
+    fun `discovery hides oversized dubbed candidates`() = runTest {
+        val harness = newHarness(emptyList())
+        coEvery { harness.api.getStreams(any()) } returns Response.success(
+            StreamResponseDto(listOf(StreamDto(
+                name = "Movie 2160p REMUX Hindi English 25GB",
+                url = "https://stream.example/movie.mkv"
+            )))
+        )
+        val result = harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
+            .toList().last() as NetworkResult.Success
+        assertTrue(result.data.flatMap { it.streams }.isEmpty())
+    }
+
+    @Test
+    fun `unapproved addon is not queried for streams`() = runTest {
+        val other = compatibleAddon().copy(id = "other", baseUrl = "https://addon.example")
+        val harness = newHarness(emptyList(), other)
+        harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null).toList()
+        coVerify(exactly = 0) { harness.api.getStreams(any()) }
+    }
+
+    private fun newHarness(enabledScrapers: List<ScraperInfo>, addon: Addon = compatibleAddon()): Harness {
         val api = mockk<AddonApi>()
         coEvery { api.getStreams(any()) } returns Response.success(
             StreamResponseDto(
@@ -152,10 +187,6 @@ class StreamRepositoryPluginIsolationTest {
         val tmdbService = mockk<TmdbService>(relaxed = true)
         val debridSettingsDataStore = mockk<DebridSettingsDataStore>()
         every { debridSettingsDataStore.settings } returns flowOf(DebridSettings())
-        val presentation = mockk<DebridStreamPresentation>()
-        every { presentation.apply(any(), any<DebridSettings>(), any(), any()) } answers {
-            firstArg<List<AddonStreams>>()
-        }
         val availability = mockk<LocalDebridAvailabilityService>()
         coEvery { availability.markChecking(any()) } coAnswers {
             firstArg<List<AddonStreams>>()
@@ -173,7 +204,6 @@ class StreamRepositoryPluginIsolationTest {
                 profileManager = profileManager,
                 debridSettingsDataStore = debridSettingsDataStore,
                 tmdbService = tmdbService,
-                debridStreamPresentation = presentation,
                 localDebridAvailabilityService = availability,
                 serverStreams = mockk {
                     every { isNativeRequest(any()) } returns false
@@ -183,7 +213,8 @@ class StreamRepositoryPluginIsolationTest {
             ),
             api = api,
             tmdbService = tmdbService,
-            addonRepository = addonRepository
+            addonRepository = addonRepository,
+            availability = availability
         )
     }
 
@@ -193,7 +224,7 @@ class StreamRepositoryPluginIsolationTest {
         version = "1.0.0",
         description = null,
         logo = ADDON_LOGO,
-        baseUrl = "https://addon.example",
+        baseUrl = "https://torrentio.strem.fun",
         catalogs = emptyList(),
         types = emptyList(),
         resources = listOf(
@@ -229,6 +260,7 @@ class StreamRepositoryPluginIsolationTest {
         val repository: StreamRepositoryImpl,
         val api: AddonApi,
         val tmdbService: TmdbService,
-        val addonRepository: AddonRepository
+        val addonRepository: AddonRepository,
+        val availability: LocalDebridAvailabilityService
     )
 }

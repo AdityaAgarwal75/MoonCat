@@ -83,8 +83,8 @@ fun EssentialPlaybackSettingsContent(
                         }
                     )
                     SettingsToggleRow(
-                        title = "4K on fast servers",
-                        subtitle = "Requires a 4K-capable device and a fast verified direct source. Falls back to HD.",
+                        title = "Allow 4K sources",
+                        subtitle = "Requires a 4K-capable device. Direct links and torrents must respond before autoplay.",
                         checked = settings?.allow4kWhenFast == true,
                         onToggle = {
                             val current = settings ?: return@SettingsToggleRow

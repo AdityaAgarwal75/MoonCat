@@ -57,7 +57,7 @@ class ThemeDataStore @Inject constructor(
 
     val amoledMode: Flow<Boolean> = profileManager.activeProfileId.flatMapLatest { pid ->
         factory.get(pid, FEATURE).data.map { prefs ->
-            prefs[amoledModeKey] ?: false
+            prefs[amoledModeKey] ?: true
         }
     }
 

@@ -1348,7 +1348,9 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
                 showSeekOverlayTemporarily()
             }
         }
+        is PlayerEvent.OnRequestAudioLanguage -> requestAudioLanguage(event.language)
         is PlayerEvent.OnSelectAudioTrack -> {
+            cancelAudioLanguageSearch()
             logSwitchTrace(
                 stage = "event-select-audio",
                 message = "index=${event.index}"
@@ -1662,6 +1664,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             filterEpisodeStreamsByAddon(event.addonName)
         }
         is PlayerEvent.OnEpisodeStreamSelected -> {
+            cancelAudioLanguageSearch()
             switchToEpisodeStream(event.stream)
         }
         PlayerEvent.OnShowSourcesPanel -> {
@@ -1686,6 +1689,9 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             filterSourceStreamsByAddon(event.addonName)
         }
         is PlayerEvent.OnSourceStreamSelected -> {
+            cancelAudioLanguageSearch()
+            debridResolveJob?.cancel()
+            debridResolveJob = null
             sourceRecoveryJob?.cancel()
             sourceRecoveryJob = null
             switchToSourceStream(event.stream)
@@ -1705,6 +1711,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             scheduleHideControls()
         }
         PlayerEvent.OnRetry -> {
+            cancelAudioLanguageSearch()
             hasRenderedFirstFrame = false
             endDetectionArmed = false
             mpvEofSeenClear = false
@@ -1782,6 +1789,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             _uiState.update { it.copy(skipIntervalDismissed = true) }
         }
         PlayerEvent.OnPlayNextEpisode -> {
+            cancelAudioLanguageSearch()
             playNextEpisode(userInitiated = true)
         }
         PlayerEvent.OnDismissNextEpisodeCard -> {

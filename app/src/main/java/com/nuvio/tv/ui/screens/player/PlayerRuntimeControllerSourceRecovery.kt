@@ -1,7 +1,6 @@
 package com.nuvio.tv.ui.screens.player
 
 import androidx.media3.common.util.UnstableApi
-import com.nuvio.tv.core.mooncat.MoonCatSourceRace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -13,11 +12,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** Called only after a real playback failure, never because an audio language is missing. */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String): Boolean {
+    if (audioLanguageSearchJob?.isActive == true) return false
     if (_uiState.value.isServerStream || contentType.isNullOrBlank()) return false
     if (sourceRecoveryJob?.isActive == true) return true
     val requestKey = "${contentType}:${currentVideoId}:${currentSeason}:${currentEpisode}"
     if (!sourceFailoverSession.begin(requestKey, currentStreamUrl,
-            _uiState.value.currentStreamInfoHash, _uiState.value.currentStreamFileIdx)) return false
+            _uiState.value.currentStreamInfoHash, _uiState.value.currentStreamFileIdx, currentHeaders, _uiState.value.isTorrentStream)) return false
     val failedUrl = currentStreamUrl
     val position = (_exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition).coerceAtLeast(0L)
     sourceRecoveryJob = scope.launch {
@@ -36,15 +36,13 @@ internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String)
             }?.let { streams ->
                 withContext(Dispatchers.Default) { sourceFailoverSession.candidates(streams, language) }
             }.orEmpty()
-            val candidate = MoonCatSourceRace.choose(candidates, language) ?: candidates.firstOrNull()
+            val candidate = candidates.firstOrNull()
             // Never let an old failed title replace an episode or a source chosen in the meantime.
             if (failedUrl != currentStreamUrl ||
                 requestKey != "${contentType}:${currentVideoId}:${currentSeason}:${currentEpisode}") return@launch
             if (candidate != null) {
                 sourceFailoverSession.attempted(candidate)
-                if (position > 0L) _uiState.update { it.copy(pendingSeekPosition = position) }
-                // switchToSourceStream cancels discovery; it doesn't cancel this recovery job.
-                switchToSourceStream(candidate)
+                switchToSourceStream(candidate, resumePositionMs = position)
             } else {
                 _uiState.update { it.copy(error = detailedError, isBuffering = false,
                     showLoadingOverlay = false, loadingMessage = null) }

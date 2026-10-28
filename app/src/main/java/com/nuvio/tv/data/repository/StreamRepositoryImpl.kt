@@ -5,7 +5,6 @@ import android.util.Log
 import com.nuvio.tv.R
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
-import com.nuvio.tv.core.debrid.DebridStreamPresentation
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.plugin.resolvePluginSeasonEpisode
@@ -36,9 +35,14 @@ import com.nuvio.tv.domain.repository.AddonRepository
 import com.nuvio.tv.domain.repository.StreamRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emitAll
@@ -63,7 +67,6 @@ class StreamRepositoryImpl @Inject constructor(
     private val profileManager: ProfileManager,
     private val debridSettingsDataStore: DebridSettingsDataStore,
     private val tmdbService: TmdbService,
-    private val debridStreamPresentation: DebridStreamPresentation,
     private val localDebridAvailabilityService: LocalDebridAvailabilityService,
     private val serverStreams: ServerStreams
 ) : StreamRepository {
@@ -116,25 +119,26 @@ class StreamRepositoryImpl @Inject constructor(
                     videoId = videoId,
                     season = season,
                     episode = episode,
-                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons,
-                    debridSettings = sourceConfiguration.debridSettings,
-                    hasCompatiblePlugins = !isNativeServerRequest &&
-                        sourceConfiguration.pluginsEnabled &&
-                        sourceConfiguration.enabledScrapers.any { scraper -> scraper.supportsType(type) },
-                    serverSources = serverStreams.sources(type, videoId, season, episode, forceRefresh)
+                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatStreamProviders.isAllowed(it)
+                    },
+                    hasCompatiblePlugins = false,
+                    serverSources = if (isNativeServerRequest) serverStreams.sources(type, videoId, season, episode, forceRefresh) else emptyList()
                 )
             }
         )
-    }
+    }.flowOn(Dispatchers.Default)
 
     override suspend fun getCachedStreamsFromAllAddons(
         type: String,
         videoId: String,
         season: Int?,
         episode: Int?
-    ): List<AddonStreams>? = streamSearchSessions.peek(
-        buildStreamSearchRequestKey(captureSourceConfiguration(), type, videoId, season, episode)
-    )
+    ): List<AddonStreams>? = withContext(Dispatchers.Default) {
+        streamSearchSessions.peek(
+            buildStreamSearchRequestKey(captureSourceConfiguration(), type, videoId, season, episode)
+        )
+    }
 
     private fun buildStreamSearchRequestKey(
         sourceConfiguration: StreamSourceConfigurationSnapshot,
@@ -192,11 +196,10 @@ class StreamRepositoryImpl @Inject constructor(
         season: Int?,
         episode: Int?,
         addons: List<Addon>,
-        debridSettings: DebridSettings,
         hasCompatiblePlugins: Boolean,
         serverSources: List<ServerStreamSource>
-    ): Flow<NetworkResult<List<AddonStreams>>> = flow {
-        emit(NetworkResult.Loading)
+    ): Flow<NetworkResult<List<AddonStreams>>> = channelFlow {
+        send(NetworkResult.Loading)
 
         try {
             // Filter addons that support streams for this type and id
@@ -205,7 +208,9 @@ class StreamRepositoryImpl @Inject constructor(
             val streamAddons = addons.filter { addon ->
                 addon.supportsStreamResource(requestType, requestId)
             }
-            val addonSlots = Semaphore(6)
+            val addonSlots = Semaphore(4)
+            val availabilitySlots = Semaphore(2)
+            val resultMutex = Mutex()
 
             val attemptedAddonNames = streamAddons.map { it.displayName } + serverSources.map { it.name }
             val attemptedFailures = java.util.Collections.synchronizedList(
@@ -227,10 +232,9 @@ class StreamRepositoryImpl @Inject constructor(
                 streamAddons.forEach { addon ->
                     launch {
                         try {
-                            val streamsResult = addonSlots.withPermit {
-                                withTimeoutOrNull(12_000L) { getStreamsFromAddon(addon, requestType, requestId) }
-                                    ?: NetworkResult.Error("Source timed out")
-                            }
+                            val streamsResult = withTimeoutOrNull(12_000L) {
+                                addonSlots.withPermit { getStreamsFromAddon(addon, requestType, requestId) }
+                            } ?: NetworkResult.Error("Source timed out")
                             when (streamsResult) {
                                 is NetworkResult.Success -> {
                                     if (streamsResult.data.isNotEmpty()) {
@@ -291,7 +295,8 @@ class StreamRepositoryImpl @Inject constructor(
                 serverSources.forEach { source ->
                     launch {
                         try {
-                            val streams = source.load()
+                            val streams = withTimeoutOrNull(12_000L) { source.load() }
+                                ?: throw java.io.IOException("Source timed out")
                             if (streams.isNotEmpty()) {
                                 resultChannel.send(AddonStreams(addonName = source.name, addonLogo = null, streams = streams))
                             } else {
@@ -320,7 +325,7 @@ class StreamRepositoryImpl @Inject constructor(
                     try {
                         if (!hasCompatiblePlugins) return@launch
 
-                        val tmdbId = tmdbService.ensureTmdbId(videoId, type)
+                        val tmdbId = withTimeoutOrNull(4_000L) { tmdbService.ensureTmdbId(videoId, type) }
                         Log.d(TAG, "Video ID: $videoId -> TMDB ID: $tmdbId (type: $type)")
                         val pluginRequest = buildPluginRequest(tmdbId, type, videoId)
                             ?: return@launch
@@ -329,7 +334,8 @@ class StreamRepositoryImpl @Inject constructor(
                             season = season,
                             episode = episode
                         )
-                        localPluginSearchPaused
+                        withTimeoutOrNull(45_000L) {
+                            localPluginSearchPaused
                             .transformLatest { paused ->
                                 if (!paused) {
                                     streamLocalPlugins(
@@ -344,6 +350,7 @@ class StreamRepositoryImpl @Inject constructor(
                                 }
                             }
                             .first()
+                        }
                     } catch (e: Exception) {
                         if (e is CancellationException) throw e
                         Log.e(TAG, "Plugin execution failed: ${e.message}")
@@ -354,19 +361,40 @@ class StreamRepositoryImpl @Inject constructor(
                     }
                 }
 
-                // Emit results as they arrive
-                for (result in resultChannel) {
-                    val suitableResult = result.copy(
-                        streams = result.streams.filter {
-                            com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it,
-                                if (type == "series" || type == "tv") 2_000_000_000L else 7_000_000_000L, allow4k = true)
+                // Publish discovery immediately. Device/language ranking belongs to selection,
+                // not discovery: filtering here made existing dubbed files undiscoverable.
+                // Debrid availability is optional enrichment and cannot hold up another provider.
+                for (rawResult in resultChannel) {
+                    val result = rawResult.copy(streams = rawResult.streams.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.withinUserSizeLimit(it)
+                    })
+                    resultMutex.withLock {
+                        mergeDiscoveryResult(accumulatedResults, result)
+                        send(NetworkResult.Success(accumulatedResults.toList()))
+                    }
+                    launch {
+                        val checkedResult = try {
+                            withTimeoutOrNull(2_500L) {
+                                availabilitySlots.withPermit {
+                                    localDebridAvailabilityService.annotateCachedAvailability(listOf(result))
+                                        .firstOrNull()
+                                }
+                            }
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            null // Optional provider availability never destroys playable results.
                         }
-                    )
-                    val checkingResult = localDebridAvailabilityService.markChecking(listOf(suitableResult)).firstOrNull() ?: suitableResult
-                    val checkedResult = localDebridAvailabilityService.annotateCachedAvailability(listOf(checkingResult)).firstOrNull() ?: checkingResult
-                    mergePresentedResult(accumulatedResults, checkedResult, debridSettings)
-                    emit(NetworkResult.Success(accumulatedResults.toList()))
-                    Log.d(TAG, "Emitted ${accumulatedResults.size} addon(s), latest: ${checkedResult.addonName} with ${checkedResult.streams.size} streams")
+                        if (checkedResult != null && checkedResult != result) {
+                            val limitedResult = checkedResult.copy(streams = checkedResult.streams.filter {
+                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.withinUserSizeLimit(it)
+                            })
+                            resultMutex.withLock {
+                                mergeDiscoveryResult(accumulatedResults, limitedResult)
+                                send(NetworkResult.Success(accumulatedResults.toList()))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -379,17 +407,17 @@ class StreamRepositoryImpl @Inject constructor(
                     failures = attemptedFailures.toList()
                 )
                 if (errorMessage != null) {
-                    emit(NetworkResult.Error(errorMessage))
+                    send(NetworkResult.Error(errorMessage))
                 } else {
-                    emit(NetworkResult.Success(emptyList()))
+                    send(NetworkResult.Success(emptyList()))
                 }
             }
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             Log.e(TAG, "Failed to fetch streams: ${e.message}", e)
-            emit(NetworkResult.Error(e.message ?: context.getString(com.nuvio.tv.R.string.stream_error_fetch_failed)))
+            send(NetworkResult.Error(e.message ?: context.getString(com.nuvio.tv.R.string.stream_error_fetch_failed)))
         }
-    }
+    }.flowOn(Dispatchers.IO)
 
     private fun buildSourceConfigurationKey(
         addons: List<Addon>,
@@ -473,35 +501,25 @@ class StreamRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun mergePresentedResult(
+    private fun mergeDiscoveryResult(
         accumulatedResults: MutableList<AddonStreams>,
-        result: AddonStreams,
-        debridSettings: DebridSettings
+        result: AddonStreams
     ) {
         val existingIndex = accumulatedResults.indexOfFirst { it.addonName == result.addonName }
         if (existingIndex >= 0) {
             val existing = accumulatedResults[existingIndex]
-            val merged = existing.copy(
+            accumulatedResults[existingIndex] = existing.copy(
                 streams = mergeStreams(existing.streams, result.streams)
             )
-            accumulatedResults[existingIndex] = presentStreams(merged, debridSettings)
         } else {
-            accumulatedResults.add(presentStreams(result, debridSettings))
+            accumulatedResults.add(result.copy(streams = mergeStreams(emptyList(), result.streams)))
         }
     }
 
-    private fun presentStreams(result: AddonStreams, debridSettings: DebridSettings): AddonStreams {
-        return debridStreamPresentation.apply(
-            groups = listOf(result),
-            settings = debridSettings,
-            includeBadgeMatches = false
-        ).firstOrNull() ?: result
-    }
-
     private fun mergeStreams(existing: List<Stream>, incoming: List<Stream>): List<Stream> {
-        val streamsByKey = LinkedHashMap<String, Stream>()
-        existing.forEach { stream -> streamsByKey[stream.dedupKey()] = stream }
-        incoming.forEach { stream -> streamsByKey[stream.dedupKey()] = stream }
+        val streamsByKey = LinkedHashMap<StreamDiscoveryIdentity, Stream>()
+        existing.forEach { stream -> streamsByKey[stream.discoveryIdentity()] = stream }
+        incoming.forEach { stream -> streamsByKey[stream.discoveryIdentity()] = stream }
         return streamsByKey.values.toList()
     }
 
@@ -611,20 +629,6 @@ class StreamRepositoryImpl @Inject constructor(
         )
     }
 
-    private fun Stream.dedupKey(): String {
-        val base = infoHash?.lowercase()?.let { hash -> "$hash:${fileIdx ?: ""}" }
-            ?: clientResolve?.infoHash?.lowercase()?.let { hash -> "$hash:${clientResolve.fileIdx}" }
-            ?: url
-            ?: externalUrl
-            ?: ytId
-            ?: serverTarget?.key()
-            ?: "${addonName}:${name}:${title}"
-        val nameSuffix = if (base == url) {
-            val discriminator = name?.takeIf { it.isNotBlank() }
-            if (discriminator != null) "|$discriminator" else ""
-        } else ""
-        return "$base$nameSuffix"
-    }
 
     /**
      * Build a description string from scraper result

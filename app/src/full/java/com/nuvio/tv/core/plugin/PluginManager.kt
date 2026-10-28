@@ -17,6 +17,8 @@ import com.nuvio.tv.domain.model.ScraperInfo
 import com.nuvio.tv.domain.model.ScraperManifestInfo
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -46,10 +48,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "PluginManager"
-// Scrapers are network-bound, not CPU-bound. Running more concurrently lets slow
-// providers overlap with fast ones instead of batching in groups of 5. OkHttp's
-// dispatcher + the providers' own internal parallelism stay the real bottleneck.
-private const val MAX_CONCURRENT_SCRAPERS = 10
+// Scrapers also parse HTML and execute JS/DEX code. Keep their pool bounded
+// on small TV CPUs so source discovery cannot starve playback or the remote UI.
+private const val MAX_CONCURRENT_SCRAPERS = 4
 private const val MAX_RESULT_ITEMS = 150
 private const val MAX_RESPONSE_SIZE = 5 * 1024 * 1024L
 // Outer safety-net timeout for scrapers. The runner now internally caps loadLinks
@@ -710,28 +711,36 @@ class PluginManager @Inject constructor(
         
         Log.d(TAG, "Streaming execution of ${enabledList.size} scrapers for $mediaType:$tmdbId")
  
-        // Preload all extractors from EXTERNAL_DEX repos before any scraper runs
-        val dexScraperIds = enabledList.filter { it.type == RepositoryType.EXTERNAL_DEX }.map { it.id }
-        if (dexScraperIds.isNotEmpty()) {
-            val allDexIds = dataStore.scrapers.first()
-                .filter { it.type == RepositoryType.EXTERNAL_DEX }
-                .map { it.id }
-            withContext(Dispatchers.IO) {
-                externalExtensionLoader.ensureExtractorsLoaded(allDexIds)
+        // DEX extractor preparation is shared by DEX tasks only. JS providers must
+        // start immediately instead of waiting for unrelated extension loading.
+        val dexPreparation = async(Dispatchers.IO) {
+            try {
+                if (enabledList.any { it.type == RepositoryType.EXTERNAL_DEX }) {
+                    val allDexIds = dataStore.scrapers.first()
+                        .filter { it.type == RepositoryType.EXTERNAL_DEX }
+                        .map { it.id }
+                    externalExtensionLoader.ensureExtractorsLoaded(allDexIds)
+                }
+                Result.success(Unit)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Result.failure(error)
             }
         }
- 
+
         enabledList.forEachIndexed { index, scraper ->
             launch(scraperOrchestrationDispatcher) {
                 if (index > 0) {
                     kotlinx.coroutines.delay(index * 60L)
                 }
                 try {
+                    if (scraper.type == RepositoryType.EXTERNAL_DEX) dexPreparation.await().getOrThrow()
                     val results = executeScraperWithSingleFlight(scraper, tmdbId, mediaType, season, episode)
                     if (results.isNotEmpty()) {
                         send(scraper to results)
                     }
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     Log.e(TAG, "Scraper ${scraper.name} failed in streaming: ${e.message}")
                 }
             }
@@ -750,33 +759,24 @@ class PluginManager @Inject constructor(
     ): List<LocalScraperResult> {
         val cacheKey = "${scraper.id}:$tmdbId:$mediaType:$season:$episode"
         
-        // Check if already in flight
-        val existing = inFlightScrapers[cacheKey]
-        if (existing != null) {
-            return try {
-                existing.await()
-            } catch (e: Exception) {
-                emptyList()
-            }
-        }
-        
-        // Create new deferred
+        // Register atomically before starting work. Concurrent requests previously
+        // both passed the lookup and executed the same JS/DEX provider twice.
         return coroutineScope {
-            val deferred = async {
+            val candidate = async(start = CoroutineStart.LAZY) {
                 scraperSemaphore.withPermit {
                     executeScraper(scraper, tmdbId, mediaType, season, episode)
                 }
             }
-            
-            inFlightScrapers[cacheKey] = deferred
-            
+            val selected = inFlightScrapers.putIfAbsent(cacheKey, candidate) ?: candidate
+            if (selected !== candidate) candidate.cancel()
             try {
-                deferred.await()
+                selected.await()
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.e(TAG, "Scraper ${scraper.name} failed: ${e.message}")
                 emptyList()
             } finally {
-                inFlightScrapers.remove(cacheKey)
+                if (selected === candidate) inFlightScrapers.remove(cacheKey, candidate)
             }
         }
     }
@@ -853,6 +853,7 @@ class PluginManager @Inject constructor(
             results.map { it.copy(provider = scraper.name) }
 
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Failed to execute scraper ${scraper.name}: ${e.message}", e)
             emptyList()
         }
@@ -882,6 +883,7 @@ class PluginManager @Inject constructor(
             Log.d(TAG, "DEX scraper ${scraper.name} returned ${results.size} results")
             results.map { it.copy(provider = scraper.name) }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Log.e(TAG, "Failed to execute DEX scraper ${scraper.name}: ${e.message}", e)
             emptyList()
         }
