@@ -63,7 +63,7 @@ object MoonCatSourceRace {
         }
     }
 
-    /** A short sample is a readiness hint. Prefer HD with headroom, then rank language/quality. */
+    /** A short sample is a readiness hint, not a sustained speed guarantee. */
     internal fun selectMeasured(samples: List<Pair<Stream, Double>>, language: String = "hi", allow4k: Boolean = false): Stream? {
         val usable = samples.filter { (stream, speed) ->
             MoonCatSourcePolicy.suitable(stream, allow4k = allow4k) && speed.isFinite() && speed > 0 &&
@@ -74,9 +74,9 @@ object MoonCatSourceRace {
         }
         return (withHeadroom.ifEmpty { usable }).minWithOrNull(
             compareBy<Pair<Stream, Double>> { MoonCatSourcePolicy.languageTier(it.first, language) }
+                .thenByDescending { it.second }
                 .thenBy { MoonCatSourcePolicy.qualityTier(it.first) }
                 .thenBy { MoonCatSourcePolicy.releaseTier(it.first) }
-                .thenByDescending { it.second }
         )?.first
     }
 

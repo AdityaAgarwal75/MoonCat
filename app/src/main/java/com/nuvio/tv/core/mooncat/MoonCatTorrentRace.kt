@@ -44,8 +44,9 @@ object MoonCatTorrentRace {
                     completed++
                 }
             }
-            ready.minWithOrNull(compareBy<Stream> { MoonCatSourcePolicy.languageTier(it, preferredLanguage) }
-                .thenBy(MoonCatSourcePolicy::qualityTier).thenBy(MoonCatSourcePolicy::releaseTier))
+            // Results arrive in preload completion order; prefer the configured
+            // language and otherwise use the first verified preload.
+            ready.minByOrNull { MoonCatSourcePolicy.languageTier(it, preferredLanguage) }
         } finally { jobs.forEach { it.cancel() } }
     }
 }

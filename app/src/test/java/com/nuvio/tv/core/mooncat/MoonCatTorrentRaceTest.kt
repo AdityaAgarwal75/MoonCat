@@ -40,10 +40,10 @@ class MoonCatTorrentRaceTest {
         })
     }
 
-    @Test fun `fast720 does not beat a ready1080 by a few milliseconds`() = runTest {
+    @Test fun `first ready torrent wins within the preferred language`() = runTest {
         val hd = source("1080p Hindi").copy(infoHash = "hd")
         val small = source("720p Hindi").copy(infoHash = "small")
-        assertEquals(hd, MoonCatTorrentRace.choose(listOf(small, hd)) {
+        assertEquals(small, MoonCatTorrentRace.choose(listOf(small, hd)) {
             delay(if (it == small) 50 else 300); true
         })
     }
