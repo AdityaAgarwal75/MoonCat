@@ -1,7 +1,7 @@
 name: MoonCat TV validation and APK
 on:
   push:
-    branches: [main, rebuild/playback-engine-v1.1.0]
+    branches: [main, work/mooncat-v2]
     paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
     branches: [main]
@@ -77,12 +77,11 @@ jobs:
           "$TOOL/apksigner" verify --verbose "$APK"
           "$TOOL/aapt" dump badging "$APK" > /tmp/mooncat-badging.txt
           if [ "$PREVIEW" = true ]; then
-            grep -F "name='dev.mooncat.tv.preview' versionCode='10009'" /tmp/mooncat-badging.txt
-            cp "$APK" dist/MoonCat-v1.1.0-Preview-FireTV.apk
+            grep -F "name='dev.mooncat.tv.v2.preview' versionCode='20000'" /tmp/mooncat-badging.txt
+            cp "$APK" dist/MoonCat-v2.0.0-Preview-FireTV.apk
           else
-            grep -F "name='dev.mooncat.tv' versionCode='10009'" /tmp/mooncat-badging.txt
-            "$TOOL/apksigner" verify --print-certs "$APK" | grep -F '6341008335cc94f1dba060680dbedafd59ba5d5ef8017d09ff8757cccdd0ec0c'
-            cp "$APK" dist/MoonCat-v1.1.0-FireTV.apk
+            grep -F "name='dev.mooncat.tv.v2' versionCode='20000'" /tmp/mooncat-badging.txt
+            cp "$APK" dist/MoonCat-v2.0.0-FireTV.apk
           fi
           python3 scripts/validate_packaged_catalogues.py "$APK"
           cd dist
@@ -98,23 +97,6 @@ jobs:
             app/build/reports/lint-results-*.html
           if-no-files-found: warn
           retention-days: 30
-      - name: Publish verified candidate
-        if: github.event_name == 'push' && github.ref_name == 'rebuild/playback-engine-v1.1.0'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PREVIEW: ${{ steps.identity.outputs.preview }}
-        run: |
-          cp docs/RELEASE-v1.1.0.md /tmp/release-notes.md
-          if [ "$PREVIEW" = true ]; then
-            printf '\nSigning: Original signing secrets are unavailable. This is MoonCat Preview, installed alongside the existing app; settings are separate.\n' >> /tmp/release-notes.md
-          fi
-          TAG=v1.1.0-rc.1
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-            gh release edit "$TAG" --notes-file /tmp/release-notes.md --prerelease
-          else
-            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title 'MoonCat 1.1.0 — new playback engine and anime branding' --notes-file /tmp/release-notes.md --prerelease
-          fi
       - name: Remove signing material
         if: always()
         run: rm -f local.properties "$RUNNER_TEMP/mooncat-release.jks"

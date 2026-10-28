@@ -1953,7 +1953,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
             fun trySelectStream(data: List<AddonStreams>): Stream? {
                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
                 val allStreams = orderedStreams.flatMap { it.streams }.filter {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 2_000_000_000L)
+                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 4_000_000_000L)
                 }
                 return StreamAutoPlaySelector.selectAutoPlayStream(
                     preferredAudioLanguage = playerSettings.preferredAudioLanguage,
@@ -1979,7 +1979,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                 if (currentStreamBingeGroup == null || !playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode) return null
                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
                 val allStreams = orderedStreams.flatMap { it.streams }.filter {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 2_000_000_000L)
+                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 4_000_000_000L)
                 }
                 // Early: binge group + filename match (most precise)
                 val nextFilename = com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
@@ -2027,7 +2027,7 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
                     ?: return null
                 val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
                 return orderedStreams.flatMap { it.streams }.filter {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 2_000_000_000L)
+                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(it, 4_000_000_000L)
                 }.firstOrNull { stream ->
                     !stream.isExternal() &&
                         com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(

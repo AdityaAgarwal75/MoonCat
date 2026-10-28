@@ -1,67 +1,69 @@
 package com.nuvio.tv.core.mooncat
 
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.core.player.playbackRequestKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** One playback request. Discovery stays live while selection waits for a preferred language.
- * HD starts in the real player: downloading the beginning of eight files is not a playback test.
- * Only explicitly enabled UHD needs a bandwidth qualification. All jobs belong to the caller.
- */
+/** Race bounded HTTP samples and torrent preloads; discovery can continue while probing. */
 class PlaybackSourceSession(
     private val languageGraceMs: Long = 1_200L,
-    private val torrentReadyTimeoutMs: Long = 4_000L
+    private val torrentReadyTimeoutMs: Long = 12_000L
 ) {
     data class Snapshot(val candidates: List<Stream> = emptyList(), val complete: Boolean = false)
 
     suspend fun select(
         snapshots: StateFlow<Snapshot>,
         language: String,
-        qualifyUhd: suspend (List<Stream>) -> Stream?,
+        probeDirect: suspend (List<Stream>) -> Stream?,
         prepareTorrent: suspend (List<Stream>) -> Stream?
-    ): Stream? {
+    ): Stream? = coroutineScope {
         val first = snapshots.first { it.candidates.isNotEmpty() || it.complete }
-        if (first.candidates.isEmpty()) return null
-        // A fallback arriving first must not permanently beat a preferred dub a moment later.
-        // This wait observes fresh snapshots; it never blocks the provider collector.
+        if (first.candidates.isEmpty()) return@coroutineScope null
         withTimeoutOrNull(languageGraceMs) {
-            snapshots.first { snapshot ->
-                snapshot.complete || snapshot.candidates.any {
-                    !it.isTorrent() && MoonCatSourcePolicy.languageTier(it, language) == 0
-                }
+            snapshots.first { snapshot -> snapshot.complete || snapshot.candidates.any {
+                MoonCatSourcePolicy.languageTier(it, language) == 0
+            } }
+        }
+        val attempted = mutableSetOf<String>()
+        while (true) {
+            val snapshot = snapshots.first { state ->
+                state.complete || state.candidates.any { it.playbackRequestKey() !in attempted }
+            }
+            val candidates = snapshot.candidates.filter { it.playbackRequestKey() !in attempted }.take(8)
+            if (candidates.isEmpty()) return@coroutineScope null
+            val direct = candidates.filterNot { it.isTorrent() }.filter { it.getStreamUrl() != null }
+            val torrents = candidates.filter { it.isTorrent() }.take(MoonCatTorrentRace.MAX_CANDIDATES)
+            val ignored = candidates.filterNot { it in direct || it.isTorrent() }
+            attempted.addAll((direct + torrents + ignored).map { it.playbackRequestKey() })
+            val results = Channel<Stream?>(2)
+            val jobs = listOfNotNull(
+                direct.takeIf { it.isNotEmpty() }?.let { sources -> launch {
+                    val result = try { withTimeoutOrNull(5_000L) { probeDirect(sources) } }
+                        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                    results.send(result)
+                } },
+                torrents.takeIf { it.isNotEmpty() }?.let { sources -> launch {
+                    val result = try { withTimeoutOrNull(torrentReadyTimeoutMs) { prepareTorrent(sources) } }
+                        catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                    results.send(result)
+                } }
+            )
+            try {
+                repeat(jobs.size) { results.receive()?.let { return@coroutineScope it } }
+            } finally {
+                jobs.forEach { it.cancel() }
+                results.close()
+            }
+            if (snapshot.complete && snapshots.value.candidates.none { it.playbackRequestKey() !in attempted }) {
+                return@coroutineScope null
             }
         }
-        val candidates = snapshots.value.candidates
-        val preferred = candidates.filter { MoonCatSourcePolicy.languageTier(it, language) == 0 }
-        suspend fun directWinner(streams: List<Stream>): Stream? {
-            // Preserve ranking, but never accept unchecked UHD after qualification failure.
-            val firstChoice = streams.firstOrNull() ?: return null
-            if (!MoonCatSourcePolicy.is4k(firstChoice)) return firstChoice
-            val qualified = try {
-                qualifyUhd(streams.filter { MoonCatSourcePolicy.is4k(it) }.take(2))
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { null }
-            return qualified ?: streams.firstOrNull { !MoonCatSourcePolicy.is4k(it) }
-        }
-        suspend fun nativeWinner(streams: List<Stream>): Stream? = try {
-            withTimeoutOrNull(torrentReadyTimeoutMs) { prepareTorrent(streams) }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { null }
-        directWinner(preferred.filterNot { it.isTorrent() })?.let { return it }
-        val preferredTorrents = preferred.filter { it.isTorrent() }
-        if (preferredTorrents.isNotEmpty()) {
-            nativeWinner(preferredTorrents)?.let { return it }
-        }
-        // Re-read after native preparation so late direct results are eligible immediately.
-        directWinner(snapshots.value.candidates.filterNot { it.isTorrent() })?.let { return it }
-        val torrents = snapshots.value.candidates.filter { it.isTorrent() && it !in preferredTorrents }
-        if (torrents.isNotEmpty()) {
-            nativeWinner(torrents)?.let { return it }
-        }
-        // Native preparation is an availability hint. Let real playback handle one ranked
-        // torrent if it did not become ready within the short selection budget.
-        return snapshots.value.candidates.firstOrNull { !MoonCatSourcePolicy.is4k(it) }
+        @Suppress("UNREACHABLE_CODE") null
     }
 }

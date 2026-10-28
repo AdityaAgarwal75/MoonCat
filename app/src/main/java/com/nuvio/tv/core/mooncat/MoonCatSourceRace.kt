@@ -1,6 +1,7 @@
 package com.nuvio.tv.core.mooncat
 
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.core.player.playbackRequestKey
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -34,9 +35,8 @@ object MoonCatSourceRace {
     private val credentialClient = client.newBuilder().followRedirects(false).build()
 
     suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", allow4k: Boolean = false): Stream? = coroutineScope {
-        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k).distinctBy {
-            it.getStreamUrl() ?: "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}"
-        }.take(MAX_CANDIDATES)
+        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k)
+            .distinctBy { it.playbackRequestKey() }.take(MAX_CANDIDATES)
         val results = Channel<Pair<Stream, Sample>?>(Channel.UNLIMITED)
         val jobs = ranked.mapNotNull { stream ->
             val url = stream.getStreamUrl()?.takeIf {

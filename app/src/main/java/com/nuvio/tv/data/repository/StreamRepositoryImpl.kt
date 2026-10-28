@@ -119,11 +119,11 @@ class StreamRepositoryImpl @Inject constructor(
                     videoId = videoId,
                     season = season,
                     episode = episode,
-                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons,
-                    hasCompatiblePlugins = !isNativeServerRequest &&
-                        sourceConfiguration.pluginsEnabled &&
-                        sourceConfiguration.enabledScrapers.any { scraper -> scraper.supportsType(type) },
-                    serverSources = serverStreams.sources(type, videoId, season, episode, forceRefresh)
+                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatStreamProviders.isAllowed(it)
+                    },
+                    hasCompatiblePlugins = false,
+                    serverSources = if (isNativeServerRequest) serverStreams.sources(type, videoId, season, episode, forceRefresh) else emptyList()
                 )
             }
         )

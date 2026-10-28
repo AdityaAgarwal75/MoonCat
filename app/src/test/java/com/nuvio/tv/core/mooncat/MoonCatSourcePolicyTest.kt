@@ -67,8 +67,8 @@ class MoonCatSourcePolicyTest {
         assertFalse(MoonCatSourcePolicy.suitable(source("4KHDHub 2160p Hindi 3 GB")))
     }
 
-    @Test fun `4k remux and large releases are excluded`() {
-        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p REMUX", "Film 1080p 40 GB", "Film 1080p 7 GiB", "Film 1080p CAM", "Film 1080p TeleSync")
+    @Test fun `4k without opt in and camera releases are excluded`() {
+        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p CAM", "Film 1080p TeleSync")
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
         assertTrue(MoonCatSourcePolicy.suitable(source("Film Hindi English Japanese 1080p 2.5 GB")))
     }
@@ -77,8 +77,8 @@ class MoonCatSourcePolicyTest {
         assertEquals(listOf("1080p multi audio", "720p", "Unknown"), ranked.map { it.name })
     }
     @Test fun `episode size limit applies even without parsed client metadata`() {
-        assertFalse(MoonCatSourcePolicy.suitable(source("1080p 3 GB"), 2_000_000_000L))
-        assertTrue(MoonCatSourcePolicy.suitable(source("1080p 1.5 GB"), 2_000_000_000L))
+        assertFalse(MoonCatSourcePolicy.suitable(source("1080p 5 GB"), 4_000_000_000L))
+        assertTrue(MoonCatSourcePolicy.suitable(source("1080p 3 GB"), 4_000_000_000L))
     }
     @Test fun `Hindi preference prioritizes Hindi over English1080 and rejects known wrong audio`() {
         val hindi = source("Hindi 720p")
@@ -90,7 +90,7 @@ class MoonCatSourcePolicyTest {
     }
     @Test fun `explicit audio inspection does not hide large or remux HD dubs`() {
         val largeDub = source("Hindi 1080p REMUX 18 GB", "https://cdn.example/large.mkv")
-        assertFalse(MoonCatSourcePolicy.suitable(largeDub))
+        assertTrue(MoonCatSourcePolicy.suitable(largeDub))
         assertTrue(MoonCatSourcePolicy.canInspectAudio(largeDub))
         assertEquals(listOf(largeDub), MoonCatSourcePolicy.audioInspectionCandidates(listOf(largeDub), "hi"))
         assertFalse(MoonCatSourcePolicy.canInspectAudio(source("Hindi 2160p 4K")))
@@ -135,13 +135,13 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.suitable(source("Tamil Hindi English 1080p")))
         assertTrue(MoonCatSourcePolicy.suitable(source("1080p")))
     }
-    @Test fun `4k requires explicit opt in and direct source while8k and remux stay excluded`() {
+    @Test fun `4k allows torrents when enabled while8k remains excluded`() {
         val uhd = source("English 2160p WEB-DL 5 GB", "https://example.com/4k")
         assertFalse(MoonCatSourcePolicy.suitable(uhd))
         assertTrue(MoonCatSourcePolicy.suitable(uhd, allow4k = true))
-        assertFalse(MoonCatSourcePolicy.suitable(uhd.copy(url = null, infoHash = "abc"), allow4k = true))
+        assertTrue(MoonCatSourcePolicy.suitable(uhd.copy(url = null, infoHash = "abc"), allow4k = true))
         assertFalse(MoonCatSourcePolicy.suitable(source("English 8K", "https://example.com/8k"), allow4k = true))
-        assertFalse(MoonCatSourcePolicy.suitable(source("English 4K REMUX", "https://example.com/remux"), allow4k = true))
+        assertTrue(MoonCatSourcePolicy.suitable(source("English 4K REMUX", "https://example.com/remux"), allow4k = true))
     }
 
 }

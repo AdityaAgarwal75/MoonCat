@@ -9,11 +9,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /** Compare bounded verified preloads in one shared engine, with a short quality grace period. */
 object MoonCatTorrentRace {
-    const val MAX_CANDIDATES = 8
-    const val DEADLINE_MS = 6000L
+    const val MAX_CANDIDATES = 4
+    const val DEADLINE_MS = 10_000L
     const val QUALITY_GRACE_MS = 700L
-    suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", probe: suspend (Stream) -> Boolean): Stream? = coroutineScope {
-        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage).filter { it.isTorrent() }
+    suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", allow4k: Boolean = false, probe: suspend (Stream) -> Boolean): Stream? = coroutineScope {
+        val ranked = MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k).filter { it.isTorrent() }
             .distinctBy { "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }.take(MAX_CANDIDATES)
         val results = Channel<Stream?>(Channel.UNLIMITED)
         val jobs = ranked.map { candidate ->

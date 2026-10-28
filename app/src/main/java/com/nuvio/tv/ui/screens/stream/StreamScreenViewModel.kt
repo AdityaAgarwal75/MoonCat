@@ -598,7 +598,8 @@ class StreamScreenViewModel @Inject constructor(
                 val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
                     val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
                         autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                            it, if (season != null) 2_000_000_000L else 7_000_000_000L, allow4k = allow4k
+                            it, if (season != null && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) 4_000_000_000L
+                            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES, allow4k = allow4k
                         )
                     }
                     // Keep raw discovery choices; apply device preferences only to autoplay.
@@ -647,15 +648,16 @@ class StreamScreenViewModel @Inject constructor(
                     sourceSelectionJob = launch {
                         val selected = com.nuvio.tv.core.mooncat.PlaybackSourceSession().select(
                             selectionSnapshots, playerSettings.preferredAudioLanguage,
-                            qualifyUhd = { candidates ->
+                            probeDirect = { candidates ->
                                 com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(
                                     candidates, playerSettings.preferredAudioLanguage, allow4k
                                 )
                             },
                             prepareTorrent = { candidates ->
                                 torrentService.chooseReadySource(
-                                    candidates, if (season != null) 2_000_000_000L else 7_000_000_000L,
-                                    playerSettings.preferredAudioLanguage
+                                    candidates, com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES,
+                                    playerSettings.preferredAudioLanguage, allow4k,
+                                    maxHdEpisodeBytes = if (season != null) 4_000_000_000L else null
                                 )
                             }
                         )

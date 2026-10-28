@@ -25,7 +25,7 @@ class MoonCatTorrentRaceTest {
         val streams = (1..10).map { torrent(it.toString()) }
         var count = 0
         assertNull(MoonCatTorrentRace.choose(listOf(streams[0]) + streams) { count++; false })
-        assertEquals(8, count)
+        assertEquals(MoonCatTorrentRace.MAX_CANDIDATES, count)
     }
     @Test fun `unresponsive probes time out instead of holding the player indefinitely`() = runTest {
         assertNull(MoonCatTorrentRace.choose(listOf(torrent("stuck"))) { delay(100000); true })

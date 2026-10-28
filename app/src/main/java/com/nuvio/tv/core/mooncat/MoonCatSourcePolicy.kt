@@ -4,8 +4,8 @@ import com.nuvio.tv.domain.model.Stream
 
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
-    const val MAX_FILE_BYTES = 7_000_000_000L
-    private val excluded = Regex("""(?i)(remux|(?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
+    const val MAX_FILE_BYTES = 100_000_000_000L
+    private val excluded = Regex("""(?i)((?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val aboveHd = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b)""")
     private val fourK = Regex("""(?i)(\b2160p\b|3840x2160|\b4[ ._-]?k\b)""")
     private val above4k = Regex("""(?i)(\b(?:4320|1440)p\b|7680x4320|\b8[ ._-]?k\b)""")
@@ -37,11 +37,10 @@ object MoonCatSourcePolicy {
         }
 
     fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES, allow4k: Boolean = false): Boolean {
-        val episode = stream.clientResolve?.let { it.season != null || it.episode != null || it.mediaType == "series" } == true
-        val limit = if (episode) minOf(2_000_000_000L, maxFileBytes) else maxFileBytes
+        val limit = maxFileBytes
         val label = text(stream)
         val isUltra = is4k(stream)
-        val permitsUltra = allow4k && isUltra && !stream.isTorrent() && !above4k.containsMatchIn(label)
+        val permitsUltra = allow4k && isUltra && !above4k.containsMatchIn(label)
         val unknownUltraHd = qualityTier(stream) == 3 && ultraHd.containsMatchIn(label)
         return stream.qualityValue <= (if (permitsUltra) 2160 else 1080) &&
             (permitsUltra || !aboveHd.containsMatchIn(label)) && !unknownUltraHd &&
