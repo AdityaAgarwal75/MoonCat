@@ -36,7 +36,7 @@ import retrofit2.Response
 
 class StreamRepositoryPluginIsolationTest {
     @Test
-    fun `addon results arrive while plugin TMDB lookup is pending`() = runBlocking {
+    fun `allowed addon results arrive without launching other plugins`() = runBlocking {
         val harness = newHarness(listOf(compatibleScraper()))
         val tmdbResult = CompletableDeferred<String?>()
         coEvery { harness.tmdbService.ensureTmdbId("tt1341338", "movie") } coAnswers {
@@ -56,6 +56,7 @@ class StreamRepositoryPluginIsolationTest {
         assertEquals(listOf("Fast Addon"), groups.map { it.addonName })
         assertEquals(1, groups.single().streams.size)
         assertTrue(tmdbResult.isActive)
+        coVerify(exactly = 0) { harness.tmdbService.ensureTmdbId(any(), any()) }
         coVerify(exactly = 1) { harness.api.getStreams(any()) }
         tmdbResult.complete(null)
         Unit
@@ -97,7 +98,7 @@ class StreamRepositoryPluginIsolationTest {
         assertEquals(listOf("Fast Addon"), success.data.map { it.addonName })
         // Pins the URL too: the regression is not merely "one call happened", it is that the
         // stream request is the only request, built from the addon's own baseUrl.
-        coVerify(exactly = 1) { harness.api.getStreams("https://addon.example/stream/movie/tt1341338.json") }
+        coVerify(exactly = 1) { harness.api.getStreams("https://torrentio.strem.fun/stream/movie/tt1341338.json") }
         coVerify(exactly = 0) { harness.addonRepository.fetchAddon(any()) }
     }
 
@@ -149,8 +150,15 @@ class StreamRepositoryPluginIsolationTest {
         assertEquals("Movie 2160p REMUX Hindi English 25GB", result.data.single().streams.single().name)
     }
 
-    private fun newHarness(enabledScrapers: List<ScraperInfo>): Harness {
-        val addon = compatibleAddon()
+    @Test
+    fun `unapproved addon is not queried for streams`() = runTest {
+        val other = compatibleAddon().copy(id = "other", baseUrl = "https://addon.example")
+        val harness = newHarness(emptyList(), other)
+        harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null).toList()
+        coVerify(exactly = 0) { harness.api.getStreams(any()) }
+    }
+
+    private fun newHarness(enabledScrapers: List<ScraperInfo>, addon: Addon = compatibleAddon()): Harness {
         val api = mockk<AddonApi>()
         coEvery { api.getStreams(any()) } returns Response.success(
             StreamResponseDto(
@@ -216,7 +224,7 @@ class StreamRepositoryPluginIsolationTest {
         version = "1.0.0",
         description = null,
         logo = ADDON_LOGO,
-        baseUrl = "https://addon.example",
+        baseUrl = "https://torrentio.strem.fun",
         catalogs = emptyList(),
         types = emptyList(),
         resources = listOf(
