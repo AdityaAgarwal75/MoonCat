@@ -928,7 +928,8 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
     var updatedSubtitleIndex: Int? = null
     var updatedAddonSubtitle: com.nuvio.tv.domain.model.Subtitle? = null
 
-    pending.audio?.let { audioSelection ->
+    // An explicit language request supersedes a persisted language for a previous file.
+    pending.audio?.takeIf { requestedAudioLanguageForPlayback == null }?.let { audioSelection ->
         if (audioTracks.isEmpty()) {
             logSwitchTrace(
                 stage = "restore-audio",
@@ -948,7 +949,7 @@ internal fun PlayerRuntimeController.applyPersistedTrackPreference(
                 if (!alreadySelected) {
                     Log.d(PlayerRuntimeController.TAG, "TRACK_PREF restore: audio index=$index lang=${audioTracks[index].language} name=${audioTracks[index].name}")
                     selectAudioTrack(index)
-                    _uiState.update { it.copy(selectedAudioTrackIndex = index) }
+                    // Only onTracksChanged may report the selected audio track.
                 } else {
                     Log.d(PlayerRuntimeController.TAG, "TRACK_PREF restore: audio index=$index already selected, clearing")
                     updatedPending = updatedPending.copy(audio = null)

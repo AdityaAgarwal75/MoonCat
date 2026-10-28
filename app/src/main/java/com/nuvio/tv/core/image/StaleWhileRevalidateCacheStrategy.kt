@@ -12,10 +12,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Stale-while-revalidate [CacheStrategy]:
@@ -38,9 +39,11 @@ class StaleWhileRevalidateCacheStrategy(
     companion object {
         private const val TAG = "NuvioSWR"
         private const val REVALIDATION_COOLDOWN_MS = 10L * 60 * 1000 // 10 min
-        private const val REVALIDATION_MAX_REQUESTS = 8
-        private val revalidatingUrls = ConcurrentHashMap.newKeySet<String>()
-        private val revalidatedAt = ConcurrentHashMap<String, Long>()
+        private const val REVALIDATION_MAX_REQUESTS = 2
+        private val registry = RevalidationRegistry(REVALIDATION_COOLDOWN_MS)
+        // Dispatcher limits apply to enqueue(), not execute(). These permits bound
+        // blocking IO too, leaving bandwidth/threads for visible posters and playback.
+        private val revalidationPermits = Semaphore(REVALIDATION_MAX_REQUESTS)
     }
 
     private val revalidationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -67,11 +70,7 @@ class StaleWhileRevalidateCacheStrategy(
             )
         ) {
             val url = networkRequest.url
-            val lastRevalidated = revalidatedAt[url]
-            val now = System.currentTimeMillis()
-            if (lastRevalidated == null || (now - lastRevalidated) > REVALIDATION_COOLDOWN_MS) {
-                scheduleBackgroundRevalidation(url, cacheResponse)
-            }
+            scheduleBackgroundRevalidation(url, cacheResponse)
         }
         return CacheStrategy.ReadResult(cacheResponse)
     }
@@ -96,50 +95,51 @@ class StaleWhileRevalidateCacheStrategy(
     }
 
     private fun scheduleBackgroundRevalidation(url: String, cachedResponse: NetworkResponse) {
-        if (!revalidatingUrls.add(url)) return
+        if (!registry.acquire(url)) return
 
         revalidationScope.launch {
             try {
-                val requestBuilder = Request.Builder().url(url)
-                cachedResponse.headers["etag"]?.let {
-                    requestBuilder.addHeader("If-None-Match", it)
-                }
-                cachedResponse.headers["last-modified"]?.let {
-                    requestBuilder.addHeader("If-Modified-Since", it)
-                }
+                revalidationPermits.withPermit {
+                    val requestBuilder = Request.Builder().url(url)
+                    cachedResponse.headers["etag"]?.let {
+                        requestBuilder.addHeader("If-None-Match", it)
+                    }
+                    cachedResponse.headers["last-modified"]?.let {
+                        requestBuilder.addHeader("If-Modified-Since", it)
+                    }
 
-                val response = quietRevalidationClient().newCall(requestBuilder.build()).execute()
-                try {
-                    when (
-                        classifyRevalidationResponse(
-                            cachedEtag = cachedResponse.headers["etag"],
-                            cachedLastModified = cachedResponse.headers["last-modified"],
-                            responseCode = response.code,
-                            responseEtag = response.header("ETag"),
-                            responseLastModified = response.header("Last-Modified"),
-                        )
-                    ) {
-                        StaleRevalidationResult.Changed -> {
-                            evictFromDiskCache(url)
-                            evictFromMemoryCache(url)
-                            ImageInvalidationBus.notifyInvalidated(url)
-                        }
-                        StaleRevalidationResult.Unchanged -> {
-                            if (response.code != 304 && response.code !in 200..299) {
-                                Log.w(TAG, "Revalidation ${response.code}: ${url.take(80)}")
+                    val response = quietRevalidationClient().newCall(requestBuilder.build()).execute()
+                    try {
+                        when (
+                            classifyRevalidationResponse(
+                                cachedEtag = cachedResponse.headers["etag"],
+                                cachedLastModified = cachedResponse.headers["last-modified"],
+                                responseCode = response.code,
+                                responseEtag = response.header("ETag"),
+                                responseLastModified = response.header("Last-Modified"),
+                            )
+                        ) {
+                            StaleRevalidationResult.Changed -> {
+                                evictFromDiskCache(url)
+                                evictFromMemoryCache(url)
+                                ImageInvalidationBus.notifyInvalidated(url)
+                            }
+                            StaleRevalidationResult.Unchanged -> {
+                                if (response.code != 304 && response.code !in 200..299) {
+                                    Log.w(TAG, "Poster revalidation HTTP ${response.code}")
+                                }
                             }
                         }
+                    } finally {
+                        response.close()
                     }
-                } finally {
-                    response.close()
                 }
             } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) {
-                    Log.w(TAG, "Revalidation error: ${url.take(80)} - ${e.message}")
-                }
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // Poster URLs can carry provider credentials; omit URLs and request messages.
+                Log.w(TAG, "Poster revalidation failed: ${e.javaClass.simpleName}")
             } finally {
-                revalidatingUrls.remove(url)
-                revalidatedAt[url] = System.currentTimeMillis()
+                registry.complete(url)
             }
         }
     }

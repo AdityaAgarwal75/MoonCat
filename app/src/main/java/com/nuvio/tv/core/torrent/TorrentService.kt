@@ -79,7 +79,7 @@ class TorrentService @Inject constructor(
         fileIdx: Int?,
         filename: String? = null,
         trackers: List<String> = emptyList(),
-        maxFileBytes: Long = 7_000_000_000L
+        maxFileBytes: Long = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES
     ): String = withContext(Dispatchers.IO) {
         startMutex.withLock { startStreamLocked(infoHash, fileIdx, filename, trackers, maxFileBytes) }
     }
@@ -110,7 +110,7 @@ class TorrentService @Inject constructor(
     }
 
     /** Race small, verified preloads without disturbing an existing playing stream. */
-    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long, preferredLanguage: String = "hi"): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
+    suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long, preferredLanguage: String = "hi", allow4k: Boolean = false, maxHdEpisodeBytes: Long? = null): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
         startMutex.withLock {
             if (_state.value is TorrentState.Streaming || _state.value is TorrentState.Connecting) return@withLock null
             val activeEngine = ensureEngine()
@@ -119,13 +119,20 @@ class TorrentService @Inject constructor(
             val added = java.util.Collections.synchronizedSet(mutableSetOf<String>())
             var winner: com.nuvio.tv.domain.model.Stream? = null
             try {
-                winner = com.nuvio.tv.core.mooncat.MoonCatTorrentRace.choose(candidates, preferredLanguage) { candidate ->
+                winner = com.nuvio.tv.core.mooncat.MoonCatTorrentRace.choose(candidates, preferredLanguage, allow4k) { candidate ->
                     val hash = candidate.getEffectiveInfoHash() ?: return@choose false
-                    val id = activeEngine.addMagnet(buildMagnetUri(hash, (DefaultTorrentTrackers + candidate.sources.orEmpty()).distinct()))
+                    // Stremio's sources use tracker: prefixes (and may also contain
+                    // dht: entries); only tracker URLs belong in magnet tr parameters.
+                    val addonTrackers = candidate.sources.orEmpty()
+                        .filter { it.startsWith("tracker:", ignoreCase = true) }
+                        .map { it.substringAfter(':') }
+                    val id = activeEngine.addMagnet(buildMagnetUri(hash, (DefaultTorrentTrackers + addonTrackers).distinct()))
                     added.add(id)
                     val route = activeEngine.prepareStream(id, candidate.getEffectiveFileIdx(), candidate.behaviorHints?.filename, 65536L)
                     routes.add(route)
-                    if (route.fileSize <= 0L || route.fileSize > maxFileBytes) return@choose false
+                    val limit = if (!com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(candidate))
+                        minOf(maxFileBytes, maxHdEpisodeBytes ?: maxFileBytes) else maxFileBytes
+                    if (route.fileSize <= 0L || route.fileSize > limit) return@choose false
                     // The engine verifies that this many media bytes are actually buffered.
                     activeEngine.preloadStream(route, 65536L)
                     true
@@ -210,7 +217,7 @@ class TorrentService @Inject constructor(
             preparedStream = stream
             // Validate the selected file, not a possibly misleading addon label or season pack size.
             // This runs before the local playback route is attached; catch cleanup stops prepared streams.
-            require(stream.fileSize > 0L && stream.fileSize <= maxFileBytes.coerceAtMost(7_000_000_000L)) {
+            require(stream.fileSize > 0L && stream.fileSize <= maxFileBytes) {
                 "Selected video exceeds the MoonCat size limit or has no valid size. Choose another source."
             }
             logPhase(

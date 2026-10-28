@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "PlayerTorrent"
 
@@ -37,10 +38,12 @@ internal suspend fun PlayerRuntimeController.startTorrentStream(
     }
 
     val effectiveFilename = filename ?: currentFilename
-    return torrentService.startStream(
-        infoHash, fileIdx, effectiveFilename, trackers,
-        maxFileBytes = if (currentSeason != null || contentType == "series") 2_000_000_000L else 7_000_000_000L
-    )
+    return withTimeoutOrNull(30_000L) {
+        torrentService.startStream(
+            infoHash, fileIdx, effectiveFilename, trackers,
+            maxFileBytes = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES
+        )
+    } ?: error("Torrent preparation timed out")
 }
 
 internal fun PlayerRuntimeController.stopTorrentStream() {

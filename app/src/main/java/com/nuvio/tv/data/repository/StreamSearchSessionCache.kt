@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
@@ -30,14 +31,16 @@ internal data class StreamSearchRequestKey(
 )
 
 /**
- * Keeps a small set of source searches alive independently of UI collectors.
+ * Shares in-flight source searches between active collectors. A short transition
+ * grace allows navigation into the player without keeping abandoned searches alive.
  * Completed results are memory-only and short-lived because addon URLs may expire.
  */
 internal class StreamSearchSessionCache(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val completedTtlMs: Long = DEFAULT_COMPLETED_TTL_MS,
-    private val maxEntries: Int = DEFAULT_MAX_ENTRIES
+    private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
+    private val stopTimeoutMs: Long = DEFAULT_STOP_TIMEOUT_MS
 ) {
     private data class Snapshot(
         val result: NetworkResult<List<AddonStreams>>,
@@ -51,6 +54,8 @@ internal class StreamSearchSessionCache(
         lateinit var job: Job
         @Volatile var invalidated: Boolean = false
         var completedAtMs: Long? = null
+        var subscribers: Int = 0
+        var stopJob: Job? = null
         var lastSuccessfulResult: NetworkResult.Success<List<AddonStreams>>? = null
     }
 
@@ -63,16 +68,20 @@ internal class StreamSearchSessionCache(
         producer: () -> Flow<NetworkResult<List<AddonStreams>>>
     ): Flow<NetworkResult<List<AddonStreams>>> = flow {
         val session = acquireSession(key, forceRefresh, producer)
-        var emittedVersion = -1L
-        emitAll(
-            session.state.transformWhile { snapshot ->
-                if (snapshot.version != emittedVersion) {
-                    emittedVersion = snapshot.version
-                    emit(snapshot.result)
+        try {
+            var emittedVersion = -1L
+            emitAll(
+                session.state.transformWhile { snapshot ->
+                    if (snapshot.version != emittedVersion) {
+                        emittedVersion = snapshot.version
+                        emit(snapshot.result)
+                    }
+                    !snapshot.isComplete
                 }
-                !snapshot.isComplete
-            }
-        )
+            )
+        } finally {
+            withContext(NonCancellable) { releaseSession(key, session) }
+        }
     }
 
     /** The streams a search for [key] already holds, without starting one or touching its lifetime. */
@@ -96,10 +105,16 @@ internal class StreamSearchSessionCache(
             if (forceRefresh) {
                 sessions.remove(key)?.cancelAndComplete()
             } else {
-                sessions[key]?.let { return@withLock it }
+                sessions[key]?.let {
+                    it.stopJob?.cancel()
+                    it.stopJob = null
+                    it.subscribers++
+                    return@withLock it
+                }
             }
 
             createSession(key, producer).also { session ->
+                session.subscribers = 1
                 sessions[key] = session
                 trimToSizeLocked()
                 created = session
@@ -149,10 +164,28 @@ internal class StreamSearchSessionCache(
                     )
                 }
             } finally {
-                completeSession(key, session)
+                withContext(NonCancellable) { completeSession(key, session) }
             }
         }
         return session
+    }
+
+    private suspend fun releaseSession(key: StreamSearchRequestKey, session: Session) {
+        mutex.withLock {
+            session.subscribers = (session.subscribers - 1).coerceAtLeast(0)
+            if (session.subscribers != 0 || session.state.value.isComplete || session.invalidated) return
+            session.stopJob?.cancel()
+            session.stopJob = scope.launch {
+                delay(stopTimeoutMs)
+                mutex.withLock {
+                    if (sessions[key] === session && session.subscribers == 0 &&
+                        !session.state.value.isComplete) {
+                        sessions.remove(key)
+                        session.cancelAndComplete()
+                    }
+                }
+            }
+        }
     }
 
     private suspend fun completeSession(key: StreamSearchRequestKey, session: Session) {
@@ -219,6 +252,8 @@ internal class StreamSearchSessionCache(
     private fun Session.cancelAndComplete() {
         invalidated = true
         state.update { current -> current.copy(isComplete = true) }
+        stopJob?.cancel()
+        stopJob = null
         job.cancel()
     }
 
@@ -230,7 +265,8 @@ internal class StreamSearchSessionCache(
             episode == other.episode
 
     private companion object {
-        const val DEFAULT_COMPLETED_TTL_MS = 5 * 60 * 1_000L
+        const val DEFAULT_COMPLETED_TTL_MS = 60 * 1_000L
+        const val DEFAULT_STOP_TIMEOUT_MS = 2_000L
         const val DEFAULT_MAX_ENTRIES = 4
     }
 }

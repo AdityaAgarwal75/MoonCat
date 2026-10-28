@@ -42,4 +42,38 @@ class SourceFailoverSessionTest {
         assertTrue(session.candidates(listOf(torrent), "hi").isEmpty())
         assertEquals(listOf(torrent.copy(fileIdx = 2)), session.candidates(listOf(torrent.copy(fileIdx = 2)), "hi"))
     }
+    @Test fun `dead CDN must not exclude a different direct route for the same torrent`() {
+        val session = SourceFailoverSession()
+        session.begin("movie:a", "https://dead/video", "abc", 1)
+        val alternative = source("Hindi 1080p", "https://live/video").copy(infoHash = "abc", fileIdx = 1)
+        assertEquals(listOf(alternative), session.candidates(listOf(alternative), "hi"))
+    }
+
+    @Test fun `headers and transport form part of request identity without exposing secrets`() {
+        val url = "https://live/video?token=private"
+        val first = playbackRequestKey(url, "abc", 1, mapOf("Authorization" to "first-secret"))
+        val second = playbackRequestKey(url, "abc", 1, mapOf("authorization" to "second-secret"))
+        assertNotEquals(first, second)
+        assertEquals(first, playbackRequestKey(url, "other-hash", 99, mapOf("authorization" to "first-secret")))
+        assertFalse(first.contains("private"))
+        assertFalse(first.contains("secret"))
+        assertEquals(64, first.length)
+        assertNotEquals(first, playbackRequestKey(null, "abc", 1))
+    }
+    @Test fun `failed local torrent URL also excludes its original hash and file`() {
+        val session = SourceFailoverSession()
+        session.begin("episode", "http://127.0.0.1:8080/stream/abc", "abc", 1, localTorrent = true)
+        val dead = source("Hindi 1080p").copy(infoHash = "abc", fileIdx = 1)
+        val live = dead.copy(infoHash = "def")
+        assertEquals(listOf(live), session.candidates(listOf(dead, live), "hi"))
+    }
+    @Test fun `userinfo and player normalized auth share failover identity`() {
+        val raw = "https://user:password@cdn.test/movie?token=private"
+        val headers = mapOf("Authorization" to "Basic dXNlcjpwYXNzd29yZA==")
+        val normalized = "https://cdn.test/movie?token=private"
+        assertEquals(playbackRequestKey(raw, null, null), playbackRequestKey(normalized, null, null, headers))
+        val session = SourceFailoverSession()
+        session.begin("movie", normalized, null, null, headers)
+        assertTrue(session.candidates(listOf(source("Hindi 1080p", raw)), "hi").isEmpty())
+    }
 }

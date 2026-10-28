@@ -469,19 +469,9 @@ internal fun HomeViewModel.loadCatalogPipeline(
                         if (pendingCatalogLoads == 0) {
                             catalogsLoadInProgress = false
                         }
-                        // Batch updates: only trigger a UI rebuild when all
-                        // eager catalogs have completed, or let the debounce
-                        // in scheduleUpdateCatalogRows coalesce intermediate
-                        // arrivals.  When pending == 0 we always flush.
-                        if (pendingCatalogLoads == 0) {
-                            scheduleUpdateCatalogRows()
-                        } else if (!hasRenderedFirstCatalog) {
-                            // First content arriving — show it quickly so the
-                            // user sees something beyond placeholders.
-                            scheduleUpdateCatalogRows()
-                        }
-                        // Otherwise, let the next completion or the final
-                        // pendingCatalogLoads==0 trigger the update.
+                        // Show completed rows progressively; the existing debounce
+                        // coalesces bursts without waiting for the slowest provider.
+                        scheduleUpdateCatalogRows()
                     }
                     is NetworkResult.Error -> {
                         val errorKey = catalogKey(
@@ -504,10 +494,7 @@ internal fun HomeViewModel.loadCatalogPipeline(
                         if (pendingCatalogLoads == 0) {
                             catalogsLoadInProgress = false
                         }
-                        // Same batching logic as success path.
-                        if (pendingCatalogLoads == 0 || !hasRenderedFirstCatalog) {
-                            scheduleUpdateCatalogRows()
-                        }
+                        scheduleUpdateCatalogRows()
                     }
                     NetworkResult.Loading -> {
                         /* Handled by individual row */

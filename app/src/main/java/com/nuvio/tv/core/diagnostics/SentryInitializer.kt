@@ -11,9 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 object SentryInitializer {
     private val droppedIssueText = listOf(
@@ -24,13 +22,12 @@ object SentryInitializer {
     @Volatile private var started = false
     @Volatile private var active = false
 
+    @Synchronized
     fun start(application: Application, settings: SentrySettingsDataStore) {
         if (started) return
         started = true
-        val initialEnabled = runBlocking(Dispatchers.IO) {
-            settings.enabled.first()
-        }
-        applyEnabled(application, initialEnabled)
+        // Diagnostics must never hold the first frame while DataStore opens its file.
+        // The first flow value applies the persisted opt-in before initializing Sentry.
         scope.launch {
             settings.enabled.distinctUntilChanged().collect { enabled ->
                 applyEnabled(application, enabled)

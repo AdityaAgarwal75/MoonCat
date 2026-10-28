@@ -261,7 +261,7 @@ data class PlayerSettings(
     val frameRateMatchingMode: FrameRateMatchingMode = FrameRateMatchingMode.OFF,
     val resolutionMatchingEnabled: Boolean = false,
     // Stream selection settings
-    val allow4kWhenFast: Boolean = false,
+    val allow4kWhenFast: Boolean = true,
     val streamAutoPlayMode: StreamAutoPlayMode = StreamAutoPlayMode.FIRST_STREAM,
     val streamAutoPlaySource: StreamAutoPlaySource = StreamAutoPlaySource.ALL_SOURCES,
     val streamAutoPlaySelectedAddons: Set<String> = emptySet(),
@@ -926,7 +926,7 @@ class PlayerSettingsDataStore @Inject constructor(
                     runCatching { FrameRateMatchingMode.valueOf(it) }.getOrNull()
                 } ?: if (prefs[frameRateMatchingKey] == true) FrameRateMatchingMode.START_STOP else FrameRateMatchingMode.OFF,
                 resolutionMatchingEnabled = prefs[resolutionMatchingEnabledKey] ?: false,
-                allow4kWhenFast = prefs[allow4kWhenFastKey] ?: false,
+                allow4kWhenFast = prefs[allow4kWhenFastKey] ?: true,
                 streamAutoPlayMode = prefs[streamAutoPlayModeKey]?.let {
                     runCatching { StreamAutoPlayMode.valueOf(it) }.getOrDefault(StreamAutoPlayMode.FIRST_STREAM)
                 } ?: StreamAutoPlayMode.FIRST_STREAM,

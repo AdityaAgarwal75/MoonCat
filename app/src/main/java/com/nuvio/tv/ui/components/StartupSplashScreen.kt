@@ -1,5 +1,11 @@
 package com.nuvio.tv.ui.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +23,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -103,6 +110,20 @@ fun StartupSplashScreen(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
         )
+        // A few lightweight animated stars keep loading visible on low-memory TVs.
+        val shimmer = rememberInfiniteTransition(label = "mooncat stars").animateFloat(
+            initialValue = 0.28f, targetValue = 0.9f,
+            animationSpec = infiniteRepeatable(tween(1800), RepeatMode.Reverse),
+            label = "star glow"
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            listOf(Offset(0.13f, 0.16f), Offset(0.82f, 0.12f), Offset(0.91f, 0.34f),
+                Offset(0.16f, 0.66f)).forEachIndexed { index, point ->
+                val alpha = if (index % 2 == 0) shimmer.value else 1f - shimmer.value / 2f
+                drawCircle(Color(0xFFFFE9BD).copy(alpha = alpha), radius = 2.dp.toPx(),
+                    center = Offset(size.width * point.x, size.height * point.y))
+            }
+        }
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
             LoadingIndicator(modifier = Modifier.align(Alignment.TopCenter)
                 .offset(y = maxHeight * 0.82f - 14.dp).size(28.dp))

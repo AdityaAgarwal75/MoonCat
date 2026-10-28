@@ -1,7 +1,8 @@
 name: MoonCat TV validation and APK
 on:
   push:
-    branches: [main, fix/fire-tv-autoplay-v1.0.7]
+    branches: [main, work/mooncat-v2, work/mooncat-fast-start]
+    tags: ['v2*']
     paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
     branches: [main]
@@ -45,13 +46,16 @@ jobs:
         if: github.event_name != 'pull_request'
         id: identity
         env:
-          KEYSTORE: ${{ secrets.MOONCAT_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.MOONCAT_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.MOONCAT_KEY_ALIAS }}
+          KEYSTORE: ${{ secrets.MOONCAT_V2_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.MOONCAT_V2_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOONCAT_V2_KEY_ALIAS }}
+          CERT_SHA256: ${{ secrets.MOONCAT_V2_CERT_SHA256 }}
         run: |
           python3 - <<'PY'
           import base64, os, pathlib
-          trusted = all(os.environ.get(k) for k in ('KEYSTORE', 'STORE_PASSWORD', 'KEY_ALIAS'))
+          trusted = all(os.environ.get(k) for k in ('KEYSTORE', 'STORE_PASSWORD', 'KEY_ALIAS', 'CERT_SHA256'))
+          if os.environ.get('GITHUB_REF_TYPE') == 'tag' and not trusted:
+              raise SystemExit('v2 release signing secrets are required for tag builds')
           if trusted:
               key = pathlib.Path(os.environ['RUNNER_TEMP']) / 'mooncat-release.jks'
               key.write_bytes(base64.b64decode(os.environ['KEYSTORE'], validate=True)); key.chmod(0o600)
@@ -70,19 +74,24 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           PREVIEW: ${{ steps.identity.outputs.preview }}
+          CERT_SHA256: ${{ secrets.MOONCAT_V2_CERT_SHA256 }}
         run: |
           mkdir -p dist
           APK="$(find app/build/outputs/apk/full/release -maxdepth 1 -name '*.apk' -print -quit)"
           TOOL="$ANDROID_HOME/build-tools/36.0.0"
+          VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -1)"
+          CODE="$(sed -n 's/^[[:space:]]*versionCode = \([0-9]*\)/\1/p' app/build.gradle.kts | head -1)"
+          [[ "$VERSION" =~ ^[0-9A-Za-z.-]+$ && "$CODE" =~ ^[0-9]+$ ]]
           "$TOOL/apksigner" verify --verbose "$APK"
           "$TOOL/aapt" dump badging "$APK" > /tmp/mooncat-badging.txt
           if [ "$PREVIEW" = true ]; then
-            grep -F "name='dev.mooncat.tv.preview' versionCode='10008'" /tmp/mooncat-badging.txt
-            cp "$APK" dist/MoonCat-v1.0.7-Preview-FireTV.apk
+            grep -F "name='dev.mooncat.tv.v2.preview' versionCode='$CODE'" /tmp/mooncat-badging.txt
+            cp "$APK" dist/MoonCat-v${VERSION}-Preview-FireTV.apk
           else
-            grep -F "name='dev.mooncat.tv' versionCode='10008'" /tmp/mooncat-badging.txt
-            "$TOOL/apksigner" verify --print-certs "$APK" | grep -F '6341008335cc94f1dba060680dbedafd59ba5d5ef8017d09ff8757cccdd0ec0c'
-            cp "$APK" dist/MoonCat-v1.0.7-FireTV.apk
+            grep -F "name='dev.mooncat.tv.v2' versionCode='$CODE'" /tmp/mooncat-badging.txt
+            [[ "$CERT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            "$TOOL/apksigner" verify --print-certs "$APK" | grep -F "Signer #1 certificate SHA-256 digest: $CERT_SHA256"
+            cp "$APK" dist/MoonCat-v${VERSION}-FireTV.apk
           fi
           python3 scripts/validate_packaged_catalogues.py "$APK"
           cd dist
@@ -98,23 +107,17 @@ jobs:
             app/build/reports/lint-results-*.html
           if-no-files-found: warn
           retention-days: 30
-      - name: Publish verified candidate
-        if: github.event_name == 'push' && github.ref_name == 'fix/fire-tv-autoplay-v1.0.7'
+      - name: Publish signed v2 release
+        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/work/mooncat-v2' || github.ref == 'refs/heads/work/mooncat-fast-start') && steps.identity.outputs.preview == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-          PREVIEW: ${{ steps.identity.outputs.preview }}
         run: |
-          cp docs/RELEASE-v1.0.7.md /tmp/release-notes.md
-          if [ "$PREVIEW" = true ]; then
-            printf '\nSigning: Original signing secrets are unavailable. This is MoonCat Preview, installed alongside the existing app; settings are separate.\n' >> /tmp/release-notes.md
-          fi
-          TAG=v1.0.7-rc.1
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-            gh release edit "$TAG" --notes-file /tmp/release-notes.md --prerelease
-          else
-            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title 'MoonCat 1.0.7 — autoplay and Fire TV responsiveness' --notes-file /tmp/release-notes.md --prerelease
-          fi
+          VERSION="$(sed -n 's/^[[:space:]]*versionName = "\([^"]*\)"/\1/p' app/build.gradle.kts | head -1)"
+          if [ "$GITHUB_REF_TYPE" = tag ]; then test "$GITHUB_REF_NAME" = "v$VERSION"; fi
+          test ! -z "$VERSION"
+          FLAGS=()
+          if [[ "$VERSION" == *-beta* || "$VERSION" == *-alpha* || "$VERSION" == *-rc* ]]; then FLAGS+=(--prerelease); fi
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "MoonCat $VERSION" --notes-file docs/RELEASE-v2.md "${FLAGS[@]}"
       - name: Remove signing material
         if: always()
         run: rm -f local.properties "$RUNNER_TEMP/mooncat-release.jks"
