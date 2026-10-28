@@ -479,57 +479,8 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            if (!forceRefresh && !autoPlayHandledForSession && failedAutoPlayIdentities.isEmpty() && playerSettings.streamReuseLastLinkEnabled) {
-                val cached = streamLinkCacheDataStore.getValid(
-                    contentKey = streamCacheKey,
-                    maxAgeMs = playerSettings.streamReuseLastLinkCacheHours * 60L * 60L * 1000L
-                )
-                if (cached != null && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.reusableRelease(
-                        cached.streamName, cached.filename, cached.videoSize, playerSettings.preferredAudioLanguage,
-                        if (season != null) 2_000_000_000L else 7_000_000_000L
-                    )) {
-                    autoPlayHandledForSession = true
-                    resolvedAutoPlayTarget = true
-                    val isCachedTorrent = cached.infoHash != null && cached.url.isNullOrBlank()
-                    val showOverlay = playerSettings.playerPreference == PlayerPreference.EXTERNAL
-                    updateUiStateIfChanged {
-                        it.copy(
-                            autoPlayPlaybackInfo = StreamPlaybackInfo(
-                                url = cached.url.takeIf { u -> u.isNotBlank() },
-                                title = title,
-                                streamName = cached.streamName,
-                                year = cached.year ?: year,
-                                isExternal = false,
-                                isTorrent = isCachedTorrent,
-                                infoHash = cached.infoHash,
-                                ytId = null,
-                                headers = cached.headers,
-                                contentId = contentId ?: videoId.substringBefore(":"),
-                                contentType = contentType,
-                                contentName = contentName ?: title,
-                                poster = poster,
-                                backdrop = backdrop,
-                                logo = logo,
-                                videoId = videoId,
-                                season = season,
-                                episode = episode,
-                                episodeTitle = episodeName,
-                                bingeGroup = cached.bingeGroup,
-                                profileId = playbackProfileId,
-                                filename = cached.filename,
-                                videoHash = cached.videoHash,
-                                videoSize = cached.videoSize,
-                                fileIdx = cached.fileIdx,
-                                sources = cached.sources,
-                                contentLanguage = cached.contentLanguage ?: contentLanguage,
-                                audioDelayMs = cached.audioDelayMs
-                            ),
-                            showDirectAutoPlayOverlay = showOverlay || it.showDirectAutoPlayOverlay,
-                            isDirectAutoPlayFlow = showOverlay || it.isDirectAutoPlayFlow
-                        )
-                    }
-                }
-            }
+            // Every new request goes through the readiness race. Reusing an old
+            // URL here bypassed source discovery and could strand autoplay.
 
             updateUiStateIfChanged {
                 it.copy(
@@ -598,7 +549,7 @@ class StreamScreenViewModel @Inject constructor(
                 val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
                     val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
                         autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                            it, if (season != null && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) 4_000_000_000L
+                            it, if ((season != null || episode != null || contentType.equals("series", ignoreCase = true)) && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) 4_000_000_000L
                             else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES, allow4k = allow4k
                         )
                     }
@@ -657,7 +608,7 @@ class StreamScreenViewModel @Inject constructor(
                                 torrentService.chooseReadySource(
                                     candidates, com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES,
                                     playerSettings.preferredAudioLanguage, allow4k,
-                                    maxHdEpisodeBytes = if (season != null) 4_000_000_000L else null
+                                    maxHdEpisodeBytes = if (season != null || episode != null || contentType.equals("series", ignoreCase = true)) 4_000_000_000L else null
                                 )
                             }
                         )

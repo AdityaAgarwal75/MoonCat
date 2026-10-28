@@ -167,21 +167,7 @@ internal fun PlaybackStreamSelectionSection(
         onToggle = { onUpdate { setPreloadNextEpisodeSources(!settings.preloadNextEpisodeSources) } }
     )
 
-    SettingsToggleRow(
-        title = stringResource(R.string.autoplay_reuse_last_link),
-        subtitle = stringResource(R.string.autoplay_reuse_last_link_sub),
-        checked = settings.streamReuseLastLinkEnabled,
-        onToggle = { onUpdate { setStreamReuseLastLinkEnabled(!settings.streamReuseLastLinkEnabled) } }
-    )
 
-    if (settings.streamReuseLastLinkEnabled) {
-        SettingsActionRow(
-            title = stringResource(R.string.autoplay_last_link_cache),
-            subtitle = null,
-            value = formatReuseCacheDuration(settings.streamReuseLastLinkCacheHours),
-            onClick = { onOpenDialog(PlaybackDialog.REUSE_LAST_LINK_CACHE) }
-        )
-    }
 }
 
 @Composable
