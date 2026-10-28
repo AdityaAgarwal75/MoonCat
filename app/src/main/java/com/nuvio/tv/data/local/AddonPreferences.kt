@@ -92,7 +92,7 @@ class AddonPreferences @Inject constructor(
             store(profileId).edit { prefs ->
                 if (prefs[marker] == true) return@edit
                 val urls = getCurrentList(prefs, profileId)
-                val providers = listOf("https://torrentsdb.com", "https://v3-channels.strem.io")
+                val providers = listOf("https://v3-channels.strem.io")
                 val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
                 if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
                 prefs[marker] = true
@@ -261,7 +261,6 @@ class AddonPreferences @Inject constructor(
         "https://opensubtitles-v3.strem.io",
         "https://anime-kitsu.strem.fun",
         "https://v3-channels.strem.io",
-        "https://torrentsdb.com",
         if (profileId == 1) "https://torrentio.strem.fun/language=hindi"
         else "https://torrentio.strem.fun/language=english"
     )

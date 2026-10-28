@@ -137,7 +137,7 @@ class StreamRepositoryPluginIsolationTest {
     }
 
     @Test
-    fun `discovery preserves dubbed candidates regardless of device autoplay policy`() = runTest {
+    fun `discovery hides oversized dubbed candidates`() = runTest {
         val harness = newHarness(emptyList())
         coEvery { harness.api.getStreams(any()) } returns Response.success(
             StreamResponseDto(listOf(StreamDto(
@@ -147,7 +147,7 @@ class StreamRepositoryPluginIsolationTest {
         )
         val result = harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
             .toList().last() as NetworkResult.Success
-        assertEquals("Movie 2160p REMUX Hindi English 25GB", result.data.single().streams.single().name)
+        assertTrue(result.data.flatMap { it.streams }.isEmpty())
     }
 
     @Test

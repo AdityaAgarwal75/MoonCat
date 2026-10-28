@@ -550,7 +550,7 @@ class StreamScreenViewModel @Inject constructor(
                     val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
                         autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
                             it, if ((season != null || episode != null || contentType.equals("series", ignoreCase = true)) && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) 4_000_000_000L
-                            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES, allow4k = allow4k
+                            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES, allow4k = allow4k
                         )
                     }
                     // Keep raw discovery choices; apply device preferences only to autoplay.
@@ -606,7 +606,7 @@ class StreamScreenViewModel @Inject constructor(
                             },
                             prepareTorrent = { candidates ->
                                 torrentService.chooseReadySource(
-                                    candidates, com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES,
+                                    candidates, com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES,
                                     playerSettings.preferredAudioLanguage, allow4k,
                                     maxHdEpisodeBytes = if (season != null || episode != null || contentType.equals("series", ignoreCase = true)) 4_000_000_000L else null
                                 )

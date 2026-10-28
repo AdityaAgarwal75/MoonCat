@@ -79,7 +79,7 @@ class TorrentService @Inject constructor(
         fileIdx: Int?,
         filename: String? = null,
         trackers: List<String> = emptyList(),
-        maxFileBytes: Long = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES
+        maxFileBytes: Long = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES
     ): String = withContext(Dispatchers.IO) {
         startMutex.withLock { startStreamLocked(infoHash, fileIdx, filename, trackers, maxFileBytes) }
     }

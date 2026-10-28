@@ -10,9 +10,9 @@ class MoonCatStreamProvidersTest {
         baseUrl = url, catalogs = emptyList(), types = emptyList(), resources = emptyList()
     )
 
-    @Test fun `configured Torrentio and TorrentsDB are retained`() {
+    @Test fun `only configured Torrentio is retained`() {
         assertTrue(MoonCatStreamProviders.isAllowed(addon("com.stremio.torrentio", "https://torrentio.strem.fun/sort=seeders")))
-        assertTrue(MoonCatStreamProviders.isAllowed(addon("db", "https://torrentsdb.com/config")))
+        assertFalse(MoonCatStreamProviders.isAllowed(addon("db", "https://torrentsdb.com/config")))
         assertFalse(MoonCatStreamProviders.isAllowed(addon("other", "https://torrentsdb.com.attacker.example")))
         assertFalse(MoonCatStreamProviders.isAllowed(addon("other", "https://comet.elfhosted.com")))
     }

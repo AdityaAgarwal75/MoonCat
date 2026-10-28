@@ -364,7 +364,10 @@ class StreamRepositoryImpl @Inject constructor(
                 // Publish discovery immediately. Device/language ranking belongs to selection,
                 // not discovery: filtering here made existing dubbed files undiscoverable.
                 // Debrid availability is optional enrichment and cannot hold up another provider.
-                for (result in resultChannel) {
+                for (rawResult in resultChannel) {
+                    val result = rawResult.copy(streams = rawResult.streams.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.withinUserSizeLimit(it)
+                    })
                     resultMutex.withLock {
                         mergeDiscoveryResult(accumulatedResults, result)
                         send(NetworkResult.Success(accumulatedResults.toList()))
@@ -383,8 +386,11 @@ class StreamRepositoryImpl @Inject constructor(
                             null // Optional provider availability never destroys playable results.
                         }
                         if (checkedResult != null && checkedResult != result) {
+                            val limitedResult = checkedResult.copy(streams = checkedResult.streams.filter {
+                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.withinUserSizeLimit(it)
+                            })
                             resultMutex.withLock {
-                                mergeDiscoveryResult(accumulatedResults, checkedResult)
+                                mergeDiscoveryResult(accumulatedResults, limitedResult)
                                 send(NetworkResult.Success(accumulatedResults.toList()))
                             }
                         }

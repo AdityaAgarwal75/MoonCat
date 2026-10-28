@@ -10,7 +10,6 @@ object MoonCatStreamProviders {
         val host = runCatching { URI(addon.baseUrl).host?.lowercase(Locale.ROOT) }.getOrNull().orEmpty()
         val id = addon.id.lowercase(Locale.ROOT)
         return host == "torrentio.strem.fun" || host.endsWith(".torrentio.strem.fun") ||
-            host == "torrentsdb.com" || host.endsWith(".torrentsdb.com") ||
-            id == "com.stremio.torrentio" || id == "mooncat.provider.torrentsdb"
+            id == "com.stremio.torrentio"
     }
 }

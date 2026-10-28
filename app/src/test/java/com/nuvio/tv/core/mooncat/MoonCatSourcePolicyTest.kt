@@ -11,6 +11,11 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `display limit excludes known files above four gigabytes`() {
+        assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 4 GB")))
+        assertFalse(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 2160p 4.1 GB")))
+        assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film size unknown")))
+    }
     @Test fun `episode numbers and sizes do not masquerade as 4k resolution`() {
         assertTrue(MoonCatSourcePolicy.suitable(source("Serial Episode 2160 Hindi 480p 2160 MB")))
         assertFalse(MoonCatSourcePolicy.suitable(source("Film 3840x2160 Hindi")))

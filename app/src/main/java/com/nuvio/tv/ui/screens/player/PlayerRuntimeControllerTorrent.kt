@@ -41,7 +41,7 @@ internal suspend fun PlayerRuntimeController.startTorrentStream(
     return withTimeoutOrNull(30_000L) {
         torrentService.startStream(
             infoHash, fileIdx, effectiveFilename, trackers,
-            maxFileBytes = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.MAX_FILE_BYTES
+            maxFileBytes = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES
         )
     } ?: error("Torrent preparation timed out")
 }
