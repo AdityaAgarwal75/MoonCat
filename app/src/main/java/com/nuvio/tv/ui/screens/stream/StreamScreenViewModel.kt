@@ -516,7 +516,9 @@ class StreamScreenViewModel @Inject constructor(
             var providerSearchFinished = false
             suspend fun applySuccess(addonStreamGroups: List<AddonStreams>) {
                 val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(
-                    addonStreamGroups,
+                    addonStreamGroups.map { group -> group.copy(streams = group.streams.filter {
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
+                    }) },
                     installedAddonOrder,
                     preferredServerNames
                 )
@@ -655,14 +657,22 @@ class StreamScreenViewModel @Inject constructor(
             }
 
             if (shouldAttemptEmbeddedMetaStreamLookup()) {
-                getEmbeddedStreamsFromMeta()?.let { embeddedAddonStreams ->
+                withTimeoutOrNull((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(1L)) {
+                    getEmbeddedStreamsFromMeta()
+                }?.let { embeddedAddonStreams ->
                     Log.d(
                         TAG,
                         "Using embedded video streams for videoId=$videoId count=${embeddedAddonStreams.streams.size}"
                     )
                     providerSearchFinished = true
                     applySuccess(listOf(embeddedAddonStreams))
-                    sourceSelectionJob?.join()
+                    withTimeoutOrNull((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(1L)) {
+                        sourceSelectionJob?.join()
+                    }
+                    if (!resolvedAutoPlayTarget) {
+                        autoPlayHandledForSession = true
+                        sourceSelectionJob?.cancel()
+                    }
                     updateSourceChipsForEmbedded(embeddedAddonStreams.addonName)
                     if (directAutoPlayFlowEnabledForSession && !resolvedAutoPlayTarget) {
                         directAutoPlayFlowEnabledForSession = false
