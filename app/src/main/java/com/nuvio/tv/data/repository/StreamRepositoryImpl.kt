@@ -366,7 +366,7 @@ class StreamRepositoryImpl @Inject constructor(
                 // Debrid availability is optional enrichment and cannot hold up another provider.
                 for (rawResult in resultChannel) {
                     val result = rawResult.copy(streams = rawResult.streams.filter {
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.withinUserSizeLimit(it)
+                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
                     })
                     resultMutex.withLock {
                         mergeDiscoveryResult(accumulatedResults, result)
@@ -387,7 +387,7 @@ class StreamRepositoryImpl @Inject constructor(
                         }
                         if (checkedResult != null && checkedResult != result) {
                             val limitedResult = checkedResult.copy(streams = checkedResult.streams.filter {
-                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.withinUserSizeLimit(it)
+                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
                             })
                             resultMutex.withLock {
                                 mergeDiscoveryResult(accumulatedResults, limitedResult)

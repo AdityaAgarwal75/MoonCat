@@ -11,10 +11,18 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `readiness order prioritizes well seeded candidates`() {
+        val highResolution = source("English 720p 👤 126 2 GB")
+        val wellSeeded = source("English 1080p 👤 656 1.3 GB").copy(infoHash = "second")
+        assertEquals(wellSeeded, MoonCatSourcePolicy.readinessOrder(listOf(highResolution, wellSeeded), "en").first())
+    }
     @Test fun `display limit excludes known files above four gigabytes`() {
         assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 4 GB")))
         assertFalse(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 2160p 4.1 GB")))
         assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film size unknown")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 2160p 2 GB")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("Film UHD 2 GB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p 1.3 GB")))
     }
     @Test fun `episode numbers and sizes do not masquerade as 4k resolution`() {
         assertTrue(MoonCatSourcePolicy.suitable(source("Serial Episode 2160 Hindi 480p 2160 MB")))

@@ -80,7 +80,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 private const val TAG = "StreamScreenViewModel"
-private const val DIRECT_AUTOPLAY_HARD_TIMEOUT_MS = 60_000L
+private const val DIRECT_AUTOPLAY_HARD_TIMEOUT_MS = 10_000L
 private const val STREAM_FILTER_PAGE_SIZE = 100
 
 @HiltViewModel
@@ -421,11 +421,10 @@ class StreamScreenViewModel @Inject constructor(
         val newScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(viewModelScope.coroutineContext[kotlinx.coroutines.Job]))
         streamLoadScope = newScope
         streamLoadJob = newScope.launch {
+            val searchStartedAt = android.os.SystemClock.elapsedRealtime()
             streamLoadCompleted = false
             val playerSettings = playerSettingsDataStore.playerSettings.first()
-            val allow4k = playerSettings.allow4kWhenFast && withContext(Dispatchers.Default) {
-                com.nuvio.tv.core.mooncat.MoonCatDeviceCapabilities.supports4k
-            }
+            val allow4k = false
             if (manualSelection) {
                 directAutoPlayModeInitializedForSession = true
                 directAutoPlayFlowEnabledForSession = false
@@ -589,7 +588,9 @@ class StreamScreenViewModel @Inject constructor(
                     preferBingeGroupInSelection = persistedBingeGroup != null
                 )
                 val eligible = withContext(Dispatchers.Default) {
-                    candidates(autoPlayStreams).take(32)
+                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.readinessOrder(
+                        candidates(autoPlayStreams), playerSettings.preferredAudioLanguage
+                    ).take(32)
                 }
                 selectionSnapshots.value = com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot(
                     eligible, providerSearchFinished
@@ -819,7 +820,7 @@ class StreamScreenViewModel @Inject constructor(
             // teardown so the user lands in the manual stream list with whatever
             // results have already arrived.
             if (directFlowActive) {
-                delay(DIRECT_AUTOPLAY_HARD_TIMEOUT_MS)
+                delay((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(0L))
                 // A resolved target that never actually started playback (e.g. a dead
                 // Reuse Last Link) leaves the loader up, since every earlier teardown is
                 // gated on !resolvedAutoPlayTarget. Only stuck if still foregrounded: a
@@ -846,6 +847,8 @@ class StreamScreenViewModel @Inject constructor(
                     }
                     if (!resolvedAutoPlayTarget || phantomStuck) {
                         directAutoPlayFlowEnabledForSession = false
+                        autoPlayHandledForSession = true
+                        sourceSelectionJob?.cancel()
                         updateUiStateIfChanged {
                             it.copy(
                                 isLoading = false,
@@ -857,8 +860,7 @@ class StreamScreenViewModel @Inject constructor(
                             )
                         }
                         externalPlaybackTracker.releaseAutoNextOverlay(forceRelease = true)
-                        streamLoadInner.cancel()
-                        markRemainingSourceChipsAsError()
+                        // Discovery continues, so late provider results remain available manually.
                     }
                 }
             }

@@ -12,8 +12,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 /** Race bounded HTTP samples and torrent preloads; discovery can continue while probing. */
 class PlaybackSourceSession(
-    private val languageGraceMs: Long = 1_200L,
-    private val torrentReadyTimeoutMs: Long = 12_000L
+    private val languageGraceMs: Long = 300L,
+    private val torrentReadyTimeoutMs: Long = 7_000L
 ) {
     data class Snapshot(val candidates: List<Stream> = emptyList(), val complete: Boolean = false)
 

@@ -8,6 +8,8 @@ object MoonCatSourcePolicy {
     const val USER_MAX_FILE_BYTES = 4_000_000_000L
     fun withinUserSizeLimit(stream: Stream): Boolean =
         sizeBytes(stream)?.let { it in 1..USER_MAX_FILE_BYTES } ?: true
+    fun visibleSource(stream: Stream): Boolean = withinUserSizeLimit(stream) && !is4k(stream) &&
+        !ultraHd.containsMatchIn(text(stream))
     private val excluded = Regex("""(?i)((?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val aboveHd = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b)""")
     private val fourK = Regex("""(?i)(\b2160p\b|3840x2160|\b4[ ._-]?k\b)""")
@@ -156,6 +158,11 @@ object MoonCatSourcePolicy {
         val named = seederLabel.find(content)?.groupValues?.get(1)
         return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
     }
+
+    /** Include well-seeded options early in the readiness race across resolutions. */
+    fun readinessOrder(streams: List<Stream>, language: String): List<Stream> =
+        streams.sortedWith(compareBy<Stream> { languageTier(it, language) }
+            .thenByDescending { advertisedSeeders(it) })
 
     private data class Ranked(val stream: Stream, val language: Int, val quality: Int, val release: Int, val seeders: Int)
 

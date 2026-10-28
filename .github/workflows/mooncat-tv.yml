@@ -1,7 +1,7 @@
 name: MoonCat TV validation and APK
 on:
   push:
-    branches: [main, work/mooncat-v2]
+    branches: [main, work/mooncat-v2, work/mooncat-fast-start]
     tags: ['v2*']
     paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
@@ -108,7 +108,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Publish signed v2 release
-        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/work/mooncat-v2') && steps.identity.outputs.preview == 'false'
+        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/work/mooncat-v2' || github.ref == 'refs/heads/work/mooncat-fast-start') && steps.identity.outputs.preview == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
