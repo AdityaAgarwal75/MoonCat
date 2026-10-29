@@ -25,10 +25,10 @@ class PlaybackSourceSessionTest {
         assertTrue(cancelled)
     }
 
-    @Test fun `failed sources reveal manual choice instead of launching an unverified torrent`() = runTest {
-        val torrent = source("1080p Hindi")
+    @Test fun `timed out torrent probes fall back to normal player`() = runTest {
+        val torrent = source("1080p Hindi").copy(infoHash = "fallback-hash")
         val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(torrent), true))
-        assertNull(PlaybackSourceSession().select(states, "hi", { null }, { null }))
+        assertEquals(torrent, PlaybackSourceSession().select(states, "hi", { null }, { null }))
     }
 
     @Test fun `new results arriving during a failed probe are tested`() = runTest {
