@@ -28,7 +28,7 @@ jobs:
           mkdir -p /tmp/home-build/classes /tmp/home-build/dex dist
           "$TOOL/aapt2" compile --dir home-preview/res -o /tmp/home-build/resources.zip
           "$TOOL/aapt2" link -o /tmp/home-build/base.apk --manifest home-preview/AndroidManifest.xml -I "$ANDROID_HOME/platforms/android-28/android.jar" /tmp/home-build/resources.zip
-          javac -source 8 -target 8 -bootclasspath "$ANDROID_HOME/platforms/android-28/android.jar" -d /tmp/home-build/classes home-preview/src/dev/mooncat/home/MainActivity.java
+          javac --release 8 -classpath "$ANDROID_HOME/platforms/android-28/android.jar" -d /tmp/home-build/classes home-preview/src/dev/mooncat/home/MainActivity.java
           jar cf /tmp/home-build/classes.jar -C /tmp/home-build/classes .
           "$TOOL/d8" --min-api 24 --lib "$ANDROID_HOME/platforms/android-28/android.jar" --output /tmp/home-build/dex /tmp/home-build/classes.jar
           cp /tmp/home-build/base.apk /tmp/home-build/app.apk
