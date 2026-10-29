@@ -856,6 +856,20 @@ class StreamScreenViewModel @Inject constructor(
                             applySuccess(it)
                         }
                     }
+                    // A bounded preload is only a speed hint. If it hasn't completed,
+                    // hand the best available torrent to the same player path used
+                    // by manual selection instead of abandoning autoplay.
+                    if (!resolvedAutoPlayTarget && !phantomStuck) {
+                        val fallback = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(
+                            selectionSnapshots.value.candidates.filter { it.isTorrent() },
+                            playerSettings.preferredAudioLanguage, allow4k
+                        ).firstOrNull()
+                        if (fallback != null) {
+                            sourceSelectionJob?.cancel()
+                            resolvedAutoPlayTarget = true
+                            updateUiStateIfChanged { it.copy(autoPlayStream = fallback, error = null) }
+                        }
+                    }
                     if (!resolvedAutoPlayTarget || phantomStuck) {
                         directAutoPlayFlowEnabledForSession = false
                         autoPlayHandledForSession = true
