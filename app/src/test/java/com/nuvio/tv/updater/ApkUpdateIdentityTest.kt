@@ -13,12 +13,14 @@ class ApkUpdateIdentityTest {
             validateApkUpdate(installed, ApkUpdateIdentity("dev.mooncat.tv.preview", 10007, setOf("debug")))
         }
     }
-    @Test fun `different keys and absent certificates are rejected before installer opens`() {
-        listOf(setOf("debug"), emptySet()).forEach { certificates ->
-            assertThrows(IllegalArgumentException::class.java) {
-                validateApkUpdate(installed, installed.copy(versionCode = 10007, certificateDigests = certificates))
-            }
+    @Test fun `known different keys are rejected before installer opens`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validateApkUpdate(installed, installed.copy(versionCode = 10007, certificateDigests = setOf("other")))
         }
+    }
+    @Test fun `missing certificate information defers verification to Android installer`() {
+        validateApkUpdate(installed, installed.copy(versionCode = 10007, certificateDigests = emptySet()))
+        validateApkUpdate(installed.copy(certificateDigests = emptySet()), installed.copy(versionCode = 10007))
     }
     @Test fun `downgrades and reinstall loops are rejected`() {
         listOf(10004L, 10005L).forEach { version ->

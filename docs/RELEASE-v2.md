@@ -1,4 +1,6 @@
-# MoonCat v2.0.0-beta.4
+# MoonCat v2.0.0-beta.5
+
+Fixes an updater error on devices that do not return certificate information for an APK. Android's installer continues to verify the signing key before installing an update. Existing beta 1 installations affected by the error may need one manual installation of this APK.
 
 This update uses Torrentio for addon streams, hides identified 4K sources and sources with a reported size above 4 GB, and defaults new theme settings to AMOLED. Torrent file size is checked when available. Sources without known size or resolution may still appear. Existing theme choices are preserved.
 
