@@ -1,4 +1,6 @@
-# MoonCat v2.0.0-beta.5
+# MoonCat v2.0.0-beta.6
+
+When torrent readiness checks time out, autoplay can hand an eligible HD candidate to the player instead of immediately requiring manual selection. Startup still depends on torrent peers, metadata and network conditions; this change does not guarantee playback within 10 seconds.
 
 Fixes an updater error on devices that do not return certificate information for an APK. Android's installer continues to verify the signing key before installing an update. Existing beta 1 installations affected by the error may need one manual installation of this APK.
 

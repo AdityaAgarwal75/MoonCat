@@ -1,7 +1,7 @@
 name: MoonCat TV validation and APK
 on:
   push:
-    branches: [main, work/mooncat-v2, work/mooncat-fast-start, fix/fire-tv-update-signature-check]
+    branches: [main, work/mooncat-v2, work/mooncat-fast-start, fix/fire-tv-update-signature-check, fix/autoplay-fallback]
     tags: ['v2*']
     paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
