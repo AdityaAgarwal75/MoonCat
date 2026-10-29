@@ -60,6 +60,12 @@ class PlaybackSourceSession(
                 jobs.forEach { it.cancel() }
                 results.close()
             }
+            // If no preload is ready, let the normal player start the best HD torrent.
+            // Manual selection already uses this same playback path. Metadata can take
+            // longer than the bounded race, and the player has its own failure recovery.
+            val fallback = MoonCatSourcePolicy.rank(candidates.filter { it.isTorrent() }, language)
+                .firstOrNull()
+            if (fallback != null) return@coroutineScope fallback
             if (snapshot.complete && snapshots.value.candidates.none { it.playbackRequestKey() !in attempted }) {
                 return@coroutineScope null
             }
