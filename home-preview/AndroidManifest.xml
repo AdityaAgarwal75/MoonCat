@@ -1,0 +1,7 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.mooncat.home" android:versionCode="1" android:versionName="0.1.0">
+<uses-sdk android:minSdkVersion="24" android:targetSdkVersion="28"/>
+<uses-feature android:name="android.software.leanback" android:required="false"/>
+<uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+<application android:label="MoonCat Home" android:icon="@drawable/icon" android:banner="@drawable/banner" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
+<activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
+</application></manifest>
