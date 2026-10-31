@@ -79,7 +79,7 @@ class PlaybackSourceSession(
     /** Reserve slots for both transports and language fallbacks before filling the batch.
      * Ten dead Hindi files must not crowd a healthy English source out of the race.
      */
-    internal fun probeBatch(streams: List<Stream>, language: String): List<Stream> {
+    internal fun probeBatch(streams: List<Stream>, language: String, limit: Int = 8): List<Stream> {
         val ranked = MoonCatSourcePolicy.readinessOrder(streams, language)
             .distinctBy { it.playbackRequestKey() }
         val batch = linkedMapOf<String, Stream>()
@@ -90,8 +90,15 @@ class PlaybackSourceSession(
                     ?.let { batch[it.playbackRequestKey()] = it }
             }
         }
-        ranked.forEach { if (batch.size < 8) batch[it.playbackRequestKey()] = it }
-        return batch.values.toList()
+        for (torrent in listOf(false, true)) {
+            ranked.firstOrNull { it.isTorrent() == torrent &&
+                MoonCatSourcePolicy.languageTier(it, language) == 0 &&
+                MoonCatSourcePolicy.qualityTier(it) == 0 }
+                ?.let { batch[it.playbackRequestKey()] = it }
+        }
+        ranked.forEach { if (batch.size < limit) batch[it.playbackRequestKey()] = it }
+        return batch.values.take(limit)
+
     }
 
 }

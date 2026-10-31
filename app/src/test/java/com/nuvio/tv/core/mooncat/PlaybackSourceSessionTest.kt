@@ -75,4 +75,14 @@ class PlaybackSourceSessionTest {
             MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(dead, healthy), true)), "hi", { null }, { null }))
     }
 
+    @Test fun `discovery shortlist retains fallback beyond thirty two preferred results`() {
+        val preferred = (1..40).map { source("720p Hindi $it").copy(infoHash = "hash$it") }
+        val english = source("1080p English").copy(infoHash = "english")
+        val hd = source("1080p Hindi").copy(infoHash = "hd")
+        val batch = PlaybackSourceSession().probeBatch(preferred + english + hd, "hi", limit = 32)
+        assertEquals(32, batch.size)
+        assertTrue(english in batch)
+        assertTrue(hd in batch)
+    }
+
 }

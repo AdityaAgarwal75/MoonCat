@@ -16,9 +16,14 @@ object MoonCatTorrentRace {
         val ranked = MoonCatSourcePolicy.readinessOrder(MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k), preferredLanguage).filter { it.isTorrent() }
             .distinctBy { "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }
             .let { all ->
-                val fallback = all.firstOrNull { MoonCatSourcePolicy.languageTier(it, preferredLanguage) > 0 }
-                if (fallback != null && all.size > MAX_CANDIDATES && fallback !in all.take(MAX_CANDIDATES))
-                    all.take(MAX_CANDIDATES - 1) + fallback else all.take(MAX_CANDIDATES)
+                val reserved = listOfNotNull(
+                    all.firstOrNull(),
+                    all.firstOrNull { MoonCatSourcePolicy.languageTier(it, preferredLanguage) > 0 },
+                    all.firstOrNull { MoonCatSourcePolicy.languageTier(it, preferredLanguage) == 0 &&
+                        MoonCatSourcePolicy.qualityTier(it) == 0 }
+                )
+                (reserved + all).distinctBy { "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }
+                    .take(MAX_CANDIDATES)
             }
         val results = Channel<Stream?>(Channel.UNLIMITED)
         val jobs = ranked.map { candidate ->
