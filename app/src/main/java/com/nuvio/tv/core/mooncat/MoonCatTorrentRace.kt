@@ -14,7 +14,12 @@ object MoonCatTorrentRace {
     const val QUALITY_GRACE_MS = 700L
     suspend fun choose(candidates: List<Stream>, preferredLanguage: String = "hi", allow4k: Boolean = false, probe: suspend (Stream) -> Boolean): Stream? = coroutineScope {
         val ranked = MoonCatSourcePolicy.readinessOrder(MoonCatSourcePolicy.playbackCandidates(candidates, preferredLanguage, allow4k), preferredLanguage).filter { it.isTorrent() }
-            .distinctBy { "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }.take(MAX_CANDIDATES)
+            .distinctBy { "${it.getEffectiveInfoHash()}:${it.getEffectiveFileIdx()}" }
+            .let { all ->
+                val fallback = all.firstOrNull { MoonCatSourcePolicy.languageTier(it, preferredLanguage) > 0 }
+                if (fallback != null && all.size > MAX_CANDIDATES && fallback !in all.take(MAX_CANDIDATES))
+                    all.take(MAX_CANDIDATES - 1) + fallback else all.take(MAX_CANDIDATES)
+            }
         val results = Channel<Stream?>(Channel.UNLIMITED)
         val jobs = ranked.map { candidate ->
             launch {
@@ -37,6 +42,8 @@ object MoonCatTorrentRace {
             val ready = mutableListOf(first)
             // Brief quality grace only. Missing preferred audio must not add a
             // second full provider deadline after a playable file is ready.
+            if (MoonCatSourcePolicy.languageTier(first, preferredLanguage) == 0 &&
+                MoonCatSourcePolicy.qualityTier(first) == 0) return@coroutineScope first
             val grace = QUALITY_GRACE_MS
             withTimeoutOrNull(grace) {
                 while (completed < jobs.size) {
@@ -46,7 +53,8 @@ object MoonCatTorrentRace {
             }
             // Results arrive in preload completion order; prefer the configured
             // language and otherwise use the first verified preload.
-            ready.minByOrNull { MoonCatSourcePolicy.languageTier(it, preferredLanguage) }
+            ready.minWithOrNull(compareBy<Stream> { MoonCatSourcePolicy.languageTier(it, preferredLanguage) }
+                .thenBy { MoonCatSourcePolicy.qualityTier(it) })
         } finally { jobs.forEach { it.cancel() } }
     }
 }

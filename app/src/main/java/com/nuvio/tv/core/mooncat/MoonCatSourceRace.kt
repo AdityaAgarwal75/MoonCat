@@ -74,8 +74,8 @@ object MoonCatSourceRace {
         }
         return (withHeadroom.ifEmpty { usable }).minWithOrNull(
             compareBy<Pair<Stream, Double>> { MoonCatSourcePolicy.languageTier(it.first, language) }
-                .thenByDescending { it.second }
                 .thenBy { MoonCatSourcePolicy.qualityTier(it.first) }
+                .thenByDescending { it.second }
                 .thenBy { MoonCatSourcePolicy.releaseTier(it.first) }
         )?.first
     }
