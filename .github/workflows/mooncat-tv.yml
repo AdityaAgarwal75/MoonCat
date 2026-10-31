@@ -5,7 +5,7 @@ on:
     tags: ['v2*']
     paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
-    branches: [main]
+    branches: [main, improve/source-selection-beta7]
   workflow_dispatch:
 permissions:
   contents: write
@@ -34,6 +34,8 @@ jobs:
         run: python3 scripts/validate_tv_assets.py
       - name: Release-script tests
         run: PYTHONPATH=scripts python3 -m unittest discover -s scripts/tests
+      - name: Alexa relay contract tests
+        run: python3 -m unittest discover -s alexa -p 'test_*.py'
       - name: Full TV unit suite
         run: |
           printf 'TRAKT_CLIENT_ID=mooncat-ci-fixture\nTRAKT_CLIENT_SECRET=mooncat-ci-fixture\n' > local.properties

@@ -110,6 +110,7 @@ android {
         ndk { abiFilters += listOf(providers.gradleProperty("mooncatAbi").orElse("armeabi-v7a").get()) }
         targetSdk = 36
         buildConfigField("boolean", "DETAIL_SOURCE_WARMUP", providers.gradleProperty("mooncatDetailWarmup").orNull?.toBooleanStrictOrNull()?.toString() ?: "true")
+        buildConfigField("String", "ALEXA_RELAY_URL", buildConfigString(env("ALEXA_RELAY_URL") ?: resolveProperty(devProperties, localProperties, "ALEXA_RELAY_URL")))
         versionCode = 20009
         versionName = "2.0.0-beta.10"
 
