@@ -1,13 +1,9 @@
-# MoonCat v2.0.0-beta.8
+# MoonCat v2.0.0-beta.9
 
-Implements the first startup changes from the Astra audit on top of the Beta 7 source candidate.
+Beta 9 builds on the signed Beta 8 playback and warmup changes. It replaces the preplay HTTP/torrent readiness race with immediate metadata selection when a source appears. The app prefers the configured Hindi/English audio, 1080p, and a reported size near 2 GB, up to 4 GB. Source names, seed counts, and file sizes are hints, not measured speed or actual viewer counts. The player still has to connect, prepare torrent metadata and buffer video. Manual source switching and existing recovery remain available.
 
-The detail page starts the shared source search after a short dwell for its exact movie or next episode. Play joins that repository session. Leaving details, changing its episode target or changing profile cancels the speculative collector. Builds can disable this experiment with -PmooncatDetailWarmup=false for device comparisons.
+ThePirateBay+ is installed alongside Torrentio for new and existing profiles and queried through the existing parallel addon pipeline. Its public manifest returned HTTP 502 during development; the app has a bootstrap descriptor to keep the provider visible, but availability is not guaranteed. Users can disable or uninstall it in Addons. TorrentsDB remains excluded.
 
-The verified winning torrent route is retained for up to 15 seconds and transferred into actual playback for the same hash, requested file index and filename. Other probe routes are stopped. Expired or mismatched requests prepare a fresh route. This avoids a second prepareStream call for a verified winner. Existing real-player source recovery now uses discovered alternatives before starting another lookup.
+The selected tuxedo cat has a vivid square icon and a cat-forward Fire TV banner. A separate cozy living-room illustration replaces the startup splash; profile, mark and poster assets match it. The existing alternative theme icons and some legacy wordmarks are still older art and need a later consistency pass.
 
-Includes the prior candidate's configured-addon support, diverse source probes, measured HD preference, and reported size/resolution filtering.
-
-The audit's Media3 prepared HTTP MediaSource experiment and physical Fire TV timing comparison are still pending. The external-player 5 MiB preload gate remains pending a measured experiment. These source changes do not establish instant playback or measured startup improvements.
-
-Publication requires the complete unit suite, release build and vital lint, signing verification and packaged catalogue checks. Device playback and lifecycle validation must follow before stable promotion.
+The earlier detail warmup still runs when enabled. It may send stream requests before Play, and torrents still require engine setup. No physical Fire TV timing measurement or instant-play guarantee is claimed. Compare Beta 8 and Beta 9 on the same title, profile and network; measure Play to first frame and failures, including dead or mislabelled sources. If the fast path fails too often, restore a short targeted validation only for failed providers.

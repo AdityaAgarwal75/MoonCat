@@ -11,6 +11,15 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `instant order chooses preferred 1080p near two gigabytes without probe`() {
+        val small = source("Hindi 1080p WEB-DL 900 MB 👤 800").copy(infoHash = "small")
+        val middle = source("Hindi 1080p WEB-DL 2 GB 👤 20").copy(infoHash = "middle")
+        val large = source("Hindi 1080p WEB-DL 3.8 GB 👤 1000").copy(infoHash = "large")
+        val english = source("English 1080p WEB-DL 2 GB").copy(infoHash = "english")
+        val fourK = source("Hindi 2160p 2 GB").copy(infoHash = "fourk")
+        assertEquals(listOf(middle, small, large, english), MoonCatSourcePolicy.instantOrder(
+            listOf(english, large, fourK, small, middle), "hi"))
+    }
     @Test fun `readiness order prioritizes well seeded candidates`() {
         val highResolution = source("English 720p 👤 126 2 GB")
         val wellSeeded = source("English 1080p 👤 656 1.3 GB").copy(infoHash = "second")

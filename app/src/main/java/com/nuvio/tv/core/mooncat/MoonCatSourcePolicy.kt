@@ -159,6 +159,19 @@ object MoonCatSourcePolicy {
         return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
     }
 
+    /** Fast autoplay order from addon metadata. Seeders are hints, not view counts or a speed test. */
+    fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
+        streams.filter { suitable(it, USER_MAX_FILE_BYTES) && !it.isExternal() }
+            .sortedWith(compareBy<Stream> { languageTier(it, language) }
+                .thenBy { qualityTier(it) }
+                .thenBy { stream ->
+                    val size = sizeBytes(stream) ?: return@thenBy Long.MAX_VALUE
+                    kotlin.math.abs(size - 2_000_000_000L)
+                }
+                .thenBy { releaseTier(it) }
+                .thenByDescending { advertisedSeeders(it) }
+                .thenBy { if (it.isTorrent()) 1 else 0 })
+
     /** Include well-seeded options early in the readiness race across resolutions. */
     fun readinessOrder(streams: List<Stream>, language: String): List<Stream> =
         streams.sortedWith(compareBy<Stream> { languageTier(it, language) }
