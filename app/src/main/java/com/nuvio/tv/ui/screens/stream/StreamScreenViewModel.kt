@@ -591,9 +591,9 @@ class StreamScreenViewModel @Inject constructor(
                     preferBingeGroupInSelection = persistedBingeGroup != null
                 )
                 val eligible = withContext(Dispatchers.Default) {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.readinessOrder(
-                        candidates(autoPlayStreams), playerSettings.preferredAudioLanguage
-                    ).take(32)
+                    com.nuvio.tv.core.mooncat.PlaybackSourceSession().probeBatch(
+                        candidates(autoPlayStreams), playerSettings.preferredAudioLanguage, limit = 32
+                    )
                 }
                 selectionSnapshots.value = com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot(
                     eligible, providerSearchFinished

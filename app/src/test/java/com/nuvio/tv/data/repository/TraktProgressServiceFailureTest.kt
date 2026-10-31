@@ -76,8 +76,8 @@ class TraktProgressServiceFailureTest {
     private fun createService(): TraktProgressService {
         coEvery { traktApi.getLastActivities(any()) } returns Response.success(
             TraktLastActivitiesResponseDto(
-                movies = TraktLastActivitiesMediaDto(watchedAt = "2026-01-01T00:00:00.000Z"),
-                episodes = TraktLastActivitiesMediaDto(watchedAt = "2026-01-01T00:00:00.000Z")
+                movies = TraktLastActivitiesMediaDto(watchedAt = java.time.Instant.now().toString()),
+                episodes = TraktLastActivitiesMediaDto(watchedAt = java.time.Instant.now().toString())
             )
         )
         coEvery { traktApi.getPlayback(any(), "movies", any(), any()) } returns Response.success(
@@ -86,7 +86,7 @@ class TraktProgressServiceFailureTest {
                     id = 1L,
                     type = "movie",
                     progress = 40f,
-                    pausedAt = "2026-01-01T00:00:00.000Z",
+                    pausedAt = java.time.Instant.now().toString(),
                     movie = TraktMovieDto(title = "Movie", ids = TraktIdsDto(trakt = 1, imdb = MOVIE_ID))
                 )
             )

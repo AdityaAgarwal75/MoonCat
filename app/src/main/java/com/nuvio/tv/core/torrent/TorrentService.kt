@@ -74,6 +74,24 @@ class TorrentService @Inject constructor(
     private var engineConfigurationKey: EngineConfigurationKey? = null
     private val knownTorrentIds = mutableSetOf<String>()
 
+    private data class PreparedRoute(
+        val engine: NuvioEngine,
+        val request: PreparedTorrentRequest,
+        val preparedAtMs: Long,
+        val stream: NuvioStream
+    )
+    private var preparedRoute: PreparedRoute? = null
+    private var preparedRouteExpiry: Job? = null
+
+    // Callers hold startMutex. Only an unclaimed route can expire.
+    private suspend fun discardPreparedRoute() {
+        preparedRouteExpiry?.cancel()
+        preparedRouteExpiry = null
+        val old = preparedRoute
+        preparedRoute = null
+        if (old != null) stopPreparedStream(old.engine, old.stream.id)
+    }
+
     suspend fun startStream(
         infoHash: String,
         fileIdx: Int?,
@@ -113,10 +131,12 @@ class TorrentService @Inject constructor(
     suspend fun chooseReadySource(candidates: List<com.nuvio.tv.domain.model.Stream>, maxFileBytes: Long, preferredLanguage: String = "hi", allow4k: Boolean = false, maxHdEpisodeBytes: Long? = null): com.nuvio.tv.domain.model.Stream? = withContext(Dispatchers.IO) {
         startMutex.withLock {
             if (_state.value is TorrentState.Streaming || _state.value is TorrentState.Connecting) return@withLock null
+            discardPreparedRoute()
             val activeEngine = ensureEngine()
             val previous = knownTorrentIds.toSet()
             val routes = java.util.Collections.synchronizedList(mutableListOf<NuvioStream>())
             val added = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+            val candidateRoutes = java.util.concurrent.ConcurrentHashMap<com.nuvio.tv.domain.model.Stream, NuvioStream>()
             var winner: com.nuvio.tv.domain.model.Stream? = null
             try {
                 winner = com.nuvio.tv.core.mooncat.MoonCatTorrentRace.choose(candidates, preferredLanguage, allow4k) { candidate ->
@@ -130,6 +150,7 @@ class TorrentService @Inject constructor(
                     added.add(id)
                     val route = activeEngine.prepareStream(id, candidate.getEffectiveFileIdx(), candidate.behaviorHints?.filename, 65536L)
                     routes.add(route)
+                    candidateRoutes[candidate] = route
                     val limit = if (!com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(candidate))
                         minOf(maxFileBytes, maxHdEpisodeBytes ?: maxFileBytes) else maxFileBytes
                     if (route.fileSize <= 0L || route.fileSize > limit) return@choose false
@@ -139,12 +160,29 @@ class TorrentService @Inject constructor(
                 }
                 winner
             } finally {
-                val keep = winner?.getEffectiveInfoHash()?.let(::canonicalInfoHash)
+                val selected = winner
+                val keep = selected?.getEffectiveInfoHash()?.let(::canonicalInfoHash)
+                val winningRoute = selected?.let { candidateRoutes[it] }
+                if (selected != null && winningRoute != null && keep != null) {
+                    val retained = PreparedRoute(activeEngine,
+                        PreparedTorrentRequest(keep, selected.getEffectiveFileIdx(), selected.behaviorHints?.filename),
+                        SystemClock.elapsedRealtime(), winningRoute)
+                    preparedRoute = retained
+                    preparedRouteExpiry = scope.launch {
+                        delay(PreparedTorrentRequest.TTL_MS)
+                        startMutex.withLock {
+                            if (preparedRoute === retained) {
+                                preparedRoute = null
+                                stopPreparedStream(retained.engine, retained.stream.id)
+                            }
+                        }
+                    }
+                }
                 withContext(NonCancellable) {
                     kotlinx.coroutines.withTimeoutOrNull(1500L) {
                         kotlinx.coroutines.coroutineScope {
                             added.toList().forEach { id -> launch {
-                                routes.toList().filter { it.torrentId == id }.forEach { route ->
+                                routes.toList().filter { it.torrentId == id && it.id != winningRoute?.id }.forEach { route ->
                                     runCatching { activeEngine.stopStream(route.id) }
                                 }
                                 if (id != keep && id !in previous) runCatching { activeEngine.removeTorrent(id) }
@@ -209,11 +247,22 @@ class TorrentService @Inject constructor(
             logPhase(startedAtMs, phase.get(), "torrent=${diagnosticId(torrentId)} cached=$reusedTorrent")
 
             phase.set("prepare_stream")
-            val stream = resolvedEngine.prepareStream(
-                torrentId = torrentId,
-                fileIndex = fileIdx,
-                filenameHint = filename
-            )
+            val warm = preparedRoute?.takeIf {
+                it.engine === resolvedEngine && it.request.canReuse(
+                    PreparedTorrentRequest(canonicalHash, fileIdx, filename),
+                    it.preparedAtMs, SystemClock.elapsedRealtime()
+                )
+            }
+            val stream = if (warm != null) {
+                preparedRoute = null
+                preparedRouteExpiry?.cancel()
+                preparedRouteExpiry = null
+                logPhase(startedAtMs, "reuse_prepared_route", "fileIndex=${warm.stream.fileIndex}")
+                warm.stream
+            } else {
+                discardPreparedRoute()
+                resolvedEngine.prepareStream(torrentId = torrentId, fileIndex = fileIdx, filenameHint = filename)
+            }
             preparedStream = stream
             // Validate the selected file, not a possibly misleading addon label or season pack size.
             // This runs before the local playback route is attached; catch cleanup stops prepared streams.
@@ -406,6 +455,9 @@ class TorrentService @Inject constructor(
             engineEventsJob = null
             engine = null
             engineConfigurationKey = null
+            preparedRouteExpiry?.cancel()
+            preparedRouteExpiry = null
+            preparedRoute = null
             knownTorrentIds.clear()
         }
         withContext(NonCancellable) {

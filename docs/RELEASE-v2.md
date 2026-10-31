@@ -1,15 +1,13 @@
-# MoonCat v2.0.0-beta.6
+# MoonCat v2.0.0-beta.8
 
-When torrent readiness checks time out, autoplay can hand an eligible HD candidate to the player instead of immediately requiring manual selection. Startup still depends on torrent peers, metadata and network conditions; this change does not guarantee playback within 10 seconds.
+Implements the first startup changes from the Astra audit on top of the Beta 7 source candidate.
 
-Fixes an updater error on devices that do not return certificate information for an APK. Android's installer continues to verify the signing key before installing an update. Existing beta 1 installations affected by the error may need one manual installation of this APK.
+The detail page starts the shared source search after a short dwell for its exact movie or next episode. Play joins that repository session. Leaving details, changing its episode target or changing profile cancels the speculative collector. Builds can disable this experiment with -PmooncatDetailWarmup=false for device comparisons.
 
-This update uses Torrentio for addon streams, hides identified 4K sources and sources with a reported size above 4 GB, and defaults new theme settings to AMOLED. Torrent file size is checked when available. Sources without known size or resolution may still appear. Existing theme choices are preserved.
+The verified winning torrent route is retained for up to 15 seconds and transferred into actual playback for the same hash, requested file index and filename. Other probe routes are stopped. Expired or mismatched requests prepare a fresh route. This avoids a second prepareStream call for a verified winner. Existing real-player source recovery now uses discovered alternatives before starting another lookup.
 
-Autoplay tests well-seeded candidates sooner and falls back to the source list after the discovery timeout. Startup time still depends on the network and available peers.
+Includes the prior candidate's configured-addon support, diverse source probes, measured HD preference, and reported size/resolution filtering.
 
-Addresses a possible buffer cleanup race when playback sessions close.
+The audit's Media3 prepared HTTP MediaSource experiment and physical Fire TV timing comparison are still pending. The external-player 5 MiB preload gate remains pending a measured experiment. These source changes do not establish instant playback or measured startup improvements.
 
-Playback readiness checks, home catalogue improvements, and the v2 artwork are included. Playback depends on the source, available peers, and network. This beta has not been verified on every TV device.
-
-Earlier pre-v2 MoonCat installs use a different signing identity. This release updates an existing v2 installation and requires confirmation in the Android installer.
+Publication requires the complete unit suite, release build and vital lint, signing verification and packaged catalogue checks. Device playback and lifecycle validation must follow before stable promotion.
