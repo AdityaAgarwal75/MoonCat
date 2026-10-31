@@ -172,6 +172,8 @@ fun SearchScreen(
     val didRestoreSearchFocus = remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    val alexaRelay = remember(context) { MoonCatAlexaRelay(context) }
+    var alexaPairingCode by remember { mutableStateOf<String?>(null) }
     // Latches the Back-to-field step until the user navigates, types or submits. Focus alone cannot
     // lift it: closing the Fire TV keyboard moves focus into the recent searches with no key press,
     // which would otherwise re-enable this handler.
@@ -189,6 +191,23 @@ fun SearchScreen(
                     uiState.catalogRows.any { it.items.isNotEmpty() }
         } else {
             Toast.makeText(context, strVoiceNoSpeech, Toast.LENGTH_SHORT).show()
+        }
+    }
+    LaunchedEffect(alexaRelay) {
+        if (!alexaRelay.isConfigured) return@LaunchedEffect
+        while (true) {
+            try {
+                alexaRelay.takeSearchQuery()?.let { onVoiceQueryResultState.value(it) }
+            } catch (error: Exception) {
+                Log.w("SearchScreen", "Alexa relay unavailable", error)
+            }
+            delay(2500)
+        }
+    }
+    LaunchedEffect(alexaPairingCode) {
+        if (alexaPairingCode != null) {
+            delay(300_000)
+            alexaPairingCode = null
         }
     }
     val isVoiceSearchAvailable = remember(context) { SpeechRecognizer.isRecognitionAvailable(context) }
@@ -639,6 +658,14 @@ fun SearchScreen(
                         submitCurrentQuery(uiState.query.trim())
                     },
                     showVoiceSearch = isVoiceSearchAvailable,
+                    showAlexaLink = alexaRelay.isConfigured,
+                    onAlexaLink = {
+                        coroutineScope.launch {
+                            runCatching { alexaRelay.pairingCode() }
+                                .onSuccess { alexaPairingCode = it }
+                                .onFailure { Toast.makeText(context, "Could not connect to Alexa", Toast.LENGTH_SHORT).show() }
+                        }
+                    },
                     isVoiceListening = isVoiceListening,
                     voiceRmsLevel = voiceRmsLevel,
                     onVoiceSearch = launchVoiceSearch,
@@ -660,6 +687,16 @@ fun SearchScreen(
                     clearHistoryFocusRequester = if (showRecentSearches) recentClearHistoryFocusRequester else null,
                     isScreenActive = isScreenActive
                 )
+            }
+
+            if (alexaPairingCode != null) {
+                item(key = "alexa_pairing") {
+                    Text(
+                        text = "Hold Alexa and say: Ask MoonCat to pair with ${alexaPairingCode}. Code expires in five minutes. Then say: Ask MoonCat to search for Dune.",
+                        modifier = Modifier.padding(horizontal = 52.dp),
+                        color = NuvioTheme.colors.TextPrimary
+                    )
+                }
             }
 
             if (isDiscoverMode) {
@@ -1172,6 +1209,8 @@ private fun SearchInputField(
     onQueryChanged: (String) -> Unit,
     onSubmit: () -> Unit,
     showVoiceSearch: Boolean,
+    showAlexaLink: Boolean,
+    onAlexaLink: () -> Unit,
     isVoiceListening: Boolean,
     voiceRmsLevel: Float,
     onVoiceSearch: () -> Unit,
@@ -1314,6 +1353,11 @@ private fun SearchInputField(
                 }
             }
 
+            Spacer(modifier = Modifier.width(NuvioTheme.spacing.md))
+        }
+
+        if (showAlexaLink) {
+            Button(onClick = onAlexaLink) { Text("Link Alexa") }
             Spacer(modifier = Modifier.width(NuvioTheme.spacing.md))
         }
 

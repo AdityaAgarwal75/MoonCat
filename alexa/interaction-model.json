@@ -1,0 +1,24 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "moon cat",
+      "intents": [
+        {
+          "name": "PairIntent",
+          "slots": [{"name": "code", "type": "AMAZON.NUMBER"}],
+          "samples": ["pair with {code}", "link with {code}", "pair {code}"]
+        },
+        {
+          "name": "SearchIntent",
+          "slots": [{"name": "query", "type": "AMAZON.SearchQuery"}],
+          "samples": ["search for {query}", "find {query}", "look up {query}"]
+        },
+        {"name": "AMAZON.CancelIntent", "samples": []},
+        {"name": "AMAZON.StopIntent", "samples": []},
+        {"name": "AMAZON.HelpIntent", "samples": []},
+        {"name": "AMAZON.FallbackIntent", "samples": []}
+      ],
+      "types": []
+    }
+  }
+}

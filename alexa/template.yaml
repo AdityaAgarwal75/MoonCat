@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: MoonCat private Alexa search relay
+Parameters:
+  AlexaSkillId:
+    Type: String
+    Description: Skill ID from the Alexa developer console
+Resources:
+  VoiceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+  VoiceApi:
+    Type: AWS::Serverless::HttpApi
+  VoiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.12
+      CodeUri: .
+      Handler: handler.handler
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          MOONCAT_ALEXA_TABLE: !Ref VoiceTable
+          MOONCAT_ALEXA_SKILL_ID: !Ref AlexaSkillId
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref VoiceTable
+      Events:
+        Register:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref VoiceApi
+            Path: /register
+            Method: POST
+        Command:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref VoiceApi
+            Path: /command
+            Method: GET
+  AlexaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt VoiceFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: alexa-appkit.amazon.com
+      EventSourceToken: !Ref AlexaSkillId
+Outputs:
+  SkillEndpointArn:
+    Value: !GetAtt VoiceFunction.Arn
+  RelayUrl:
+    Value: !Sub https://${VoiceApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
