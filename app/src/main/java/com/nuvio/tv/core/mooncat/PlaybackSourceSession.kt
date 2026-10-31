@@ -35,7 +35,10 @@ class PlaybackSourceSession(
             val snapshot = snapshots.first { state ->
                 state.complete || state.candidates.any { it.playbackRequestKey() !in attempted }
             }
-            val candidates = snapshot.candidates.filter { it.playbackRequestKey() !in attempted }.take(8)
+            val candidates = probeBatch(snapshot.candidates.filter { it.playbackRequestKey() !in attempted }, language)
+            // These routes must be resolved by the normal player, not an HTTP sample.
+            candidates.firstOrNull { it.serverTarget != null || it.isYouTube() ||
+                (it.isDirectDebrid() && it.getStreamUrl() == null) }?.let { return@coroutineScope it }
             if (candidates.isEmpty()) return@coroutineScope null
             val direct = candidates.filterNot { it.isTorrent() }.filter { it.getStreamUrl() != null }
             val torrents = candidates.filter { it.isTorrent() }.take(MoonCatTorrentRace.MAX_CANDIDATES)
@@ -63,7 +66,7 @@ class PlaybackSourceSession(
             // If no preload is ready, let the normal player start the best HD torrent.
             // Manual selection already uses this same playback path. Metadata can take
             // longer than the bounded race, and the player has its own failure recovery.
-            val fallback = MoonCatSourcePolicy.rank(candidates.filter { it.isTorrent() }, language)
+            val fallback = MoonCatSourcePolicy.readinessOrder(candidates.filter { it.isTorrent() }, language)
                 .firstOrNull()
             if (fallback != null) return@coroutineScope fallback
             if (snapshot.complete && snapshots.value.candidates.none { it.playbackRequestKey() !in attempted }) {
@@ -72,4 +75,30 @@ class PlaybackSourceSession(
         }
         @Suppress("UNREACHABLE_CODE") null
     }
+
+    /** Reserve slots for both transports and language fallbacks before filling the batch.
+     * Ten dead Hindi files must not crowd a healthy English source out of the race.
+     */
+    internal fun probeBatch(streams: List<Stream>, language: String, limit: Int = 8): List<Stream> {
+        val ranked = MoonCatSourcePolicy.readinessOrder(streams, language)
+            .distinctBy { it.playbackRequestKey() }
+        val batch = linkedMapOf<String, Stream>()
+        for (torrent in listOf(false, true)) {
+            for (preferred in listOf(true, false)) {
+                ranked.firstOrNull { it.isTorrent() == torrent &&
+                    (MoonCatSourcePolicy.languageTier(it, language) == 0) == preferred }
+                    ?.let { batch[it.playbackRequestKey()] = it }
+            }
+        }
+        for (torrent in listOf(false, true)) {
+            ranked.firstOrNull { it.isTorrent() == torrent &&
+                MoonCatSourcePolicy.languageTier(it, language) == 0 &&
+                MoonCatSourcePolicy.qualityTier(it) == 0 }
+                ?.let { batch[it.playbackRequestKey()] = it }
+        }
+        ranked.forEach { if (batch.size < limit) batch[it.playbackRequestKey()] = it }
+        return batch.values.take(limit)
+
+    }
+
 }

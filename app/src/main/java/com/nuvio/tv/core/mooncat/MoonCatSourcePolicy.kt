@@ -159,6 +159,27 @@ object MoonCatSourcePolicy {
         return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
     }
 
+    /** Fast autoplay order from addon metadata. Seeders are hints, not measured bandwidth. */
+    fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
+        streams.filter { suitable(it, USER_MAX_FILE_BYTES) && !it.isExternal() }
+            .sortedWith(compareBy<Stream> { languageTier(it, language) }
+                .thenBy { qualityTier(it) }
+                // A 3-3.5 GB 1080p release was observed to start quickly and look better.
+                // Unknown sizes remain available when no sized source is advertised.
+                .thenBy { stream ->
+                    val size = sizeBytes(stream)
+                    when {
+                        size == null -> 3
+                        size in 3_000_000_000L..3_500_000_000L -> 0
+                        size in 2_500_000_000L..USER_MAX_FILE_BYTES -> 1
+                        else -> 2
+                    }
+                }
+                .thenByDescending { advertisedSeeders(it) }
+                .thenBy { releaseTier(it) }
+                .thenByDescending { sizeBytes(it) ?: -1L }
+            )
+
     /** Include well-seeded options early in the readiness race across resolutions. */
     fun readinessOrder(streams: List<Stream>, language: String): List<Stream> =
         streams.sortedWith(compareBy<Stream> { languageTier(it, language) }

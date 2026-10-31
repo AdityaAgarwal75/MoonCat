@@ -40,10 +40,10 @@ class MoonCatTorrentRaceTest {
         })
     }
 
-    @Test fun `first ready torrent wins within the preferred language`() = runTest {
+    @Test fun `ready HD wins within the bounded quality grace`() = runTest {
         val hd = source("1080p Hindi").copy(infoHash = "hd")
         val small = source("720p Hindi").copy(infoHash = "small")
-        assertEquals(small, MoonCatTorrentRace.choose(listOf(small, hd)) {
+        assertEquals(hd, MoonCatTorrentRace.choose(listOf(small, hd)) {
             delay(if (it == small) 50 else 300); true
         })
     }
@@ -53,4 +53,20 @@ class MoonCatTorrentRaceTest {
         val english = source("720p English").copy(infoHash = "en")
         assertEquals(english, MoonCatTorrentRace.choose(listOf(hindi, english)) { it == english })
     }
+    @Test fun `preferred HD starts immediately without a quality grace delay`() = runTest {
+        val hd = torrent("hd")
+        val slow = torrent("slow")
+        assertEquals(hd, MoonCatTorrentRace.choose(listOf(hd, slow)) {
+            if (it == slow) delay(10000) else delay(50)
+            true
+        })
+        assertEquals(50L, testScheduler.currentTime)
+    }
+
+    @Test fun `fallback language is probed even behind many preferred releases`() = runTest {
+        val preferred = (1..8).map { torrent(it.toString()) }
+        val fallback = source("1080p English").copy(infoHash = "english")
+        assertEquals(fallback, MoonCatTorrentRace.choose(preferred + fallback) { it == fallback })
+    }
+
 }

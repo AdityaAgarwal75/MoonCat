@@ -81,6 +81,7 @@ private const val TAG = "MetaDetailsViewModel"
 class MetaDetailsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val metaRepository: MetaRepository,
+    private val streamRepository: com.nuvio.tv.domain.repository.StreamRepository,
     private val tmdbSettingsDataStore: TmdbSettingsDataStore,
     private val tmdbService: TmdbService,
     private val tmdbMetadataService: TmdbMetadataService,
@@ -108,6 +109,24 @@ class MetaDetailsViewModel @Inject constructor(
     val posterOptions: com.nuvio.tv.ui.components.posteroptions.PosterOptionsController,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+    /** Collector ownership follows the detail screen lifecycle; Play joins the repository session. */
+    suspend fun warmPlaybackSources(type: String, videoId: String, season: Int?, episode: Int?) {
+        if (!com.nuvio.tv.BuildConfig.DETAIL_SOURCE_WARMUP) return
+        kotlinx.coroutines.delay(350L)
+        if (!StreamAutoPlayPolicy.isEffectivelyEnabled(playerSettingsDataStore.playerSettings.first())) return
+        val profile = profileManager.activeProfileId.value
+        kotlinx.coroutines.coroutineScope {
+            val search = launch {
+                streamRepository.getStreamsFromAllAddons(type, videoId, season, episode).collect { }
+            }
+            val profileWatch = launch {
+                profileManager.activeProfileId.first { it != profile }
+                search.cancel()
+            }
+            try { search.join() } finally { profileWatch.cancel() }
+        }
+    }
+
     private val itemId: String = savedStateHandle["itemId"] ?: ""
     private val isServerItem = ServerItemRef.isServerId(itemId)
     private val itemType: String = savedStateHandle["itemType"] ?: ""

@@ -106,6 +106,18 @@ class AddonPreferences @Inject constructor(
                 val missing = providers.filter { provider -> urls.none { canonicalizeUrl(it) == provider } }
                 if (missing.isNotEmpty()) prefs[orderedUrlsKey] = gson.toJson(urls + missing)
                 prefs[marker] = true
+                // Separate migration: add the requested provider for existing profiles once.
+            }
+            store(profileId).edit { prefs ->
+                val pirateMarker = booleanPreferencesKey("mooncat_piratebay_plus_added_v1")
+                if (prefs[pirateMarker] != true) {
+                    val current = getCurrentList(prefs, profileId)
+                    val provider = "https://thepiratebay-plus.strem.fun"
+                    if (current.none { canonicalizeUrl(it).equals(provider, ignoreCase = true) }) {
+                        prefs[orderedUrlsKey] = gson.toJson(current + provider)
+                    }
+                    prefs[pirateMarker] = true
+                }
             }
         }
     }
@@ -272,6 +284,7 @@ class AddonPreferences @Inject constructor(
         "https://anime-kitsu.strem.fun",
         "https://v3-channels.strem.io",
         if (profileId == 1) "https://torrentio.strem.fun/language=hindi"
-        else "https://torrentio.strem.fun/language=english"
+        else "https://torrentio.strem.fun/language=english",
+        "https://thepiratebay-plus.strem.fun"
     )
 }

@@ -152,6 +152,12 @@ class MooncatCatalogInterceptor(
         /** Bootstrap documented resource IDs so first launch does not wait on remote manifests. */
         fun bootstrapManifest(baseUrl: String): Addon? {
             manifest(baseUrl)?.let { return it }
+            if (baseUrl.trimEnd('/') == "https://thepiratebay-plus.strem.fun") {
+                return Addon(id = "com.stremio.thepiratebay.plus", name = "ThePirateBay+", version = "1.4.0",
+                    description = "Community torrent stream provider; availability varies.", logo = null,
+                    baseUrl = baseUrl, catalogs = emptyList(), types = listOf(ContentType.MOVIE, ContentType.SERIES),
+                    idPrefixes = listOf("tt"), resources = listOf(AddonResource("stream", listOf("movie", "series"), listOf("tt"))))
+            }
             val httpProvider = when (baseUrl.trimEnd('/')) {
                 "https://torrentsdb.com" -> "TorrentsDB"
                 "https://hdhub.thevolecitor.qzz.io" -> "HDHub"

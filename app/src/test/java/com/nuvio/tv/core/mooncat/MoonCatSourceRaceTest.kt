@@ -77,10 +77,10 @@ class MoonCatSourceRaceTest {
         }
     }
 
-    @Test fun `measured speed wins within the preferred language`() {
+    @Test fun `HD with measured headroom beats an unnecessarily faster low resolution`() {
         val hd = source("1080p Hindi WEB-DL")
         val small = source("720p Hindi WEB-DL")
-        assertEquals(small, MoonCatSourceRace.selectMeasured(listOf(hd to 1_500_000.0, small to 6_000_000.0)))
+        assertEquals(hd, MoonCatSourceRace.selectMeasured(listOf(hd to 1_500_000.0, small to 6_000_000.0)))
         assertEquals(small, MoonCatSourceRace.selectMeasured(listOf(hd to 80_000.0, small to 1_500_000.0)))
     }
 

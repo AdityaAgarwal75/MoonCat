@@ -151,9 +151,19 @@ class StreamRepositoryPluginIsolationTest {
     }
 
     @Test
-    fun `unapproved addon is not queried for streams`() = runTest {
+    fun `configured HTTPS addon is queried for streams`() = runTest {
         val other = compatibleAddon().copy(id = "other", baseUrl = "https://addon.example")
         val harness = newHarness(emptyList(), other)
+        val results = harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null).toList()
+        assertTrue(results.last() is NetworkResult.Success)
+        coVerify(exactly = 1) { harness.api.getStreams("https://addon.example/stream/movie/tt1341338.json") }
+        coVerify(exactly = 0) { harness.addonRepository.fetchAddon(any()) }
+    }
+
+    @Test
+    fun `TorrentsDB remains excluded from stream queries`() = runTest {
+        val blocked = compatibleAddon().copy(id = "db", baseUrl = "https://torrentsdb.com")
+        val harness = newHarness(emptyList(), blocked)
         harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null).toList()
         coVerify(exactly = 0) { harness.api.getStreams(any()) }
     }
@@ -264,3 +274,4 @@ class StreamRepositoryPluginIsolationTest {
         val availability: LocalDebridAvailabilityService
     )
 }
+

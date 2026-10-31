@@ -591,9 +591,9 @@ class StreamScreenViewModel @Inject constructor(
                     preferBingeGroupInSelection = persistedBingeGroup != null
                 )
                 val eligible = withContext(Dispatchers.Default) {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.readinessOrder(
+                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.instantOrder(
                         candidates(autoPlayStreams), playerSettings.preferredAudioLanguage
-                    ).take(32)
+                    ).distinctBy { it.playbackRequestKey() }.take(32)
                 }
                 selectionSnapshots.value = com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot(
                     eligible, providerSearchFinished
@@ -601,21 +601,10 @@ class StreamScreenViewModel @Inject constructor(
                 if (!autoPlayHandledForSession && !resolvedAutoPlayTarget &&
                     sourceSelectionJob?.isActive != true && eligible.isNotEmpty()) {
                     sourceSelectionJob = launch {
-                        val selected = com.nuvio.tv.core.mooncat.PlaybackSourceSession().select(
-                            selectionSnapshots, playerSettings.preferredAudioLanguage,
-                            probeDirect = { candidates ->
-                                com.nuvio.tv.core.mooncat.MoonCatSourceRace.choose(
-                                    candidates, playerSettings.preferredAudioLanguage, allow4k
-                                )
-                            },
-                            prepareTorrent = { candidates ->
-                                torrentService.chooseReadySource(
-                                    candidates, com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES,
-                                    playerSettings.preferredAudioLanguage, allow4k,
-                                    maxHdEpisodeBytes = if (season != null || episode != null || contentType.equals("series", ignoreCase = true)) 4_000_000_000L else null
-                                )
-                            }
-                        )
+                        // Start the top metadata candidate through the normal player immediately.
+                        // The player performs actual torrent setup and retains failure recovery.
+                        val selected = selectionSnapshots.first { it.candidates.isNotEmpty() || it.complete }
+                            .candidates.firstOrNull()
                         ensureActive()
                         if (selected != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {
                             resolvedAutoPlayTarget = true

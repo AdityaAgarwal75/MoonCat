@@ -11,6 +11,24 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `instant order favours seeded three gigabyte 1080p releases`() {
+        val small = source("Hindi 1080p WEB-DL 900 MB 👤 800").copy(infoHash = "small")
+        val middle = source("Hindi 1080p WEB-DL 2 GB 👤 20").copy(infoHash = "middle")
+        val ideal = source("Hindi 1080p WEB-DL 3.2 GB 👤 100").copy(infoHash = "ideal")
+        val idealPopular = source("Hindi 1080p WEB-DL 3.4 GB 👤 500").copy(infoHash = "ideal-popular")
+        val large = source("Hindi 1080p WEB-DL 3.8 GB 👤 1000").copy(infoHash = "large")
+        val english = source("English 1080p WEB-DL 2 GB").copy(infoHash = "english")
+        val fourK = source("Hindi 2160p 2 GB").copy(infoHash = "fourk")
+        assertEquals(listOf(idealPopular, ideal, large, small, middle, english), MoonCatSourcePolicy.instantOrder(
+            listOf(english, large, ideal, fourK, small, idealPopular, middle), "hi"))
+    }
+    @Test fun `other known sizes remain fallbacks before unknown sizes`() {
+        val unknown = source("Hindi 1080p 3.9 GB 👤 500").copy(infoHash = "unknown")
+        val clean = source("Hindi 1080p WEB-DL 1.4 GB 👤 50").copy(infoHash = "clean")
+        val direct = source("Hindi 1080p WEB-DL", "https://media.example/video")
+        assertEquals(listOf(unknown, clean, direct), MoonCatSourcePolicy.instantOrder(
+            listOf(unknown, clean, direct), "hi"))
+    }
     @Test fun `readiness order prioritizes well seeded candidates`() {
         val highResolution = source("English 720p 👤 126 2 GB")
         val wellSeeded = source("English 1080p 👤 656 1.3 GB").copy(infoHash = "second")

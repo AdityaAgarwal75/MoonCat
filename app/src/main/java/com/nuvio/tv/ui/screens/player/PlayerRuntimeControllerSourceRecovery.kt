@@ -26,16 +26,22 @@ internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String)
         try {
             val settings = playerSettingsDataStore.playerSettings.first()
             val language = settings.preferredAudioLanguage
-            loadSourceStreams(forceRefresh = _uiState.value.sourceAllStreams.isEmpty())
-            val candidates = withTimeoutOrNull(12_000L) {
-                _uiState.first { state ->
-                    withContext(Dispatchers.Default) {
-                        sourceFailoverSession.candidates(state.sourceAllStreams, language).isNotEmpty()
-                    }
-                }.sourceAllStreams
-            }?.let { streams ->
-                withContext(Dispatchers.Default) { sourceFailoverSession.candidates(streams, language) }
-            }.orEmpty()
+            val cachedCandidates = withContext(Dispatchers.Default) {
+                sourceFailoverSession.candidates(_uiState.value.sourceAllStreams, language)
+            }
+            val candidates = if (cachedCandidates.isNotEmpty()) cachedCandidates else {
+                loadSourceStreams(forceRefresh = _uiState.value.sourceAllStreams.isEmpty())
+                val candidates = withTimeoutOrNull(12_000L) {
+                    _uiState.first { state ->
+                        withContext(Dispatchers.Default) {
+                            sourceFailoverSession.candidates(state.sourceAllStreams, language).isNotEmpty()
+                        }
+                    }.sourceAllStreams
+                }?.let { streams ->
+                    withContext(Dispatchers.Default) { sourceFailoverSession.candidates(streams, language) }
+                }.orEmpty()
+                candidates
+            }
             val candidate = candidates.firstOrNull()
             // Never let an old failed title replace an episode or a source chosen in the meantime.
             if (failedUrl != currentStreamUrl ||
