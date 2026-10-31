@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.detail
 import com.nuvio.tv.ui.components.LocalPlaybackAvailability
 import com.nuvio.tv.ui.navigation.LocalDetailChildClosedEpoch
 import com.nuvio.tv.ui.navigation.LocalDetailChildOverlayVisible
+import androidx.lifecycle.repeatOnLifecycle
 import android.widget.Toast
 
 import com.nuvio.tv.ui.theme.NuvioTheme
@@ -795,6 +796,19 @@ fun MetaDetailsScreen(
                         nextToWatch = uiState.nextToWatch,
                         episodesForSeason = uiState.episodesForSeason
                     )
+                }
+
+                LaunchedEffect(meta.id, playOnLoadVideo?.id, lifecycleOwner, playOnLoad) {
+                    if (!playOnLoad) {
+                        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                            if (!isSeries || playOnLoadVideo != null) {
+                                viewModel.warmPlaybackSources(
+                                    meta.apiType, playOnLoadVideo?.id ?: meta.id,
+                                    playOnLoadVideo?.season, playOnLoadVideo?.episode
+                                )
+                            }
+                        }
+                    }
                 }
 
                 LaunchedEffect(
