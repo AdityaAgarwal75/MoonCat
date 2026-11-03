@@ -232,9 +232,9 @@ class StreamRepositoryImpl @Inject constructor(
                 streamAddons.forEach { addon ->
                     launch {
                         try {
-                            val streamsResult = withTimeoutOrNull(12_000L) {
-                                addonSlots.withPermit { getStreamsFromAddon(addon, requestType, requestId) }
-                            } ?: NetworkResult.Error("Source timed out")
+                            val streamsResult = requestAddonStreams(addonSlots) {
+                                getStreamsFromAddon(addon, requestType, requestId)
+                            }
                             when (streamsResult) {
                                 is NetworkResult.Success -> {
                                     if (streamsResult.data.isNotEmpty()) {
