@@ -57,3 +57,11 @@ The vendored Media3/native engine stack is coupled to local AARs. A blind depend
 The release workflow runs packaged-data validation, Python release-script tests, the full TV JVM suite, release assembly/vital lint, APK-signature/package/version checks and packaged-catalogue validation before publishing. Added regressions cover metadata timing/cancellation, availability ranking, size fallback/cap, binge groups, empty-result retry, catalogue eviction/expiry and update download completion/cancellation/truncation.
 
 Physical TV verification still required: Play-to-first-frame on the same movie and series/network, manual source switch, resume versus restart, episode change, D-pad navigation, language/audio selection, 20-minute streaming and memory behavior. No connected Fire TV was available during this audit, so these outcomes and speed improvements are not claimed as measured.
+
+## Published release verification
+
+Published [MoonCat 2.0.0-beta.12](https://github.com/AdityaAgarwal75/MoonCat/releases/tag/v2.0.0-beta.12) on 9 November 2026 from commit `fb2c01e96df92e8f0f1e3e649c3c656a30bbf939`. [Release workflow 42629586531](https://github.com/AdityaAgarwal75/MoonCat/actions/runs/42629586531) completed successfully: all 24 Python checks, full TV JVM suite, release assembly/vital lint, signing/package verification and packaged catalogue validation.
+
+An independent download of the published 59,532,189-byte APK verified SHA-256 `233889d48d5315d9b1c2ffad32ee3e563fb214ecb1fdf32020fd2ffd4a4b2362`, matching the published SHA256SUMS. Package `dev.mooncat.tv.v2`, versionCode `20011`, versionName `2.0.0-beta.12`, ABI `armeabi-v7a`. Certificate SHA-256 `5baf6d5a03759de6ecfecf5973dffffb23d6c2a13ca677d1fc3c97888e97f422` matches the published Beta 10 APK.
+
+The five packaged mark/wordmark/banner/splash/profile assets were compared against the downloaded Beta 11 APK and match byte for byte. No replacement imagery was committed. All 11 studio catalogues and 11,655 entries validated in the published APK. Physical TV playback, sustained throughput and remote navigation remain unmeasured.
