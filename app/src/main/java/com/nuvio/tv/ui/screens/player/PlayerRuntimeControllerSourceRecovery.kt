@@ -19,7 +19,12 @@ internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String)
     if (!sourceFailoverSession.begin(requestKey, currentStreamUrl,
             _uiState.value.currentStreamInfoHash, _uiState.value.currentStreamFileIdx, currentHeaders, _uiState.value.isTorrentStream)) return false
     val failedUrl = currentStreamUrl
-    val position = (_exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition).coerceAtLeast(0L)
+    val position = com.nuvio.tv.core.player.sourceRecoveryPosition(
+        currentPositionMs = _exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition,
+        pendingSeekPositionMs = _uiState.value.pendingSeekPosition,
+        initialResumePositionMs = if (!hasRenderedFirstFrame && pendingResumeProgress != null)
+            resolvePendingInitialResumePosition() else null
+    )
     sourceRecoveryJob = scope.launch {
         showRecoveryOverlay()
         _uiState.update { it.copy(loadingMessage = context.getString(com.nuvio.tv.R.string.player_trying_another_source)) }

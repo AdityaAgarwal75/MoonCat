@@ -30,6 +30,7 @@ The playback backend runs on the TV: coroutine-based repositories query independ
 | Binge match sorted again after selection | Next episode can lose its chosen release group | Preserve matching binge group at the best available language tier |
 | Torrent initial startup always loads saved progress | “Start from beginning” resumes the old position | Respect the navigation flag for torrent startup |
 | Stalled buffering could end the watchdog without recovering | Loader can remain before READY or when no buffer is ahead | Try bounded source recovery at the current position after 15 seconds without buffer advancement; exclude paused/live playback and restrict to movies/series/shows |
+| Saved resume not yet applied when startup fails | Recovery used the player’s zero position and lost the saved timestamp | Preserve pending seek/saved resume before using the current playhead |
 | Timeout measured using wall-clock time | Clock adjustment can misfire the watchdog | Measure elapsed time with the monotonic Android clock |
 | Empty provider groups counted as cached success | Temporarily empty/filtered searches suppress a fresh retry | Require an actual stream before retaining a completed result |
 | Concurrency budget was per search | Detail and player searches could multiply requests on a low-memory TV | Share four addon slots and two enrichment slots in the repository |
