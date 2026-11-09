@@ -307,6 +307,7 @@ class PlayerRuntimeController(
             title = title,
             contentName = contentName,
             currentStreamName = streamName,
+            currentStreamDescription = navigationArgs.streamDescription ?: navigationArgs.filename,
             currentStreamUrl = currentStreamUrl,
             currentStreamInfoHash = navigationArgs.infoHash,
             currentStreamFileIdx = navigationArgs.fileIdx,

@@ -1694,7 +1694,12 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             debridResolveJob = null
             sourceRecoveryJob?.cancel()
             sourceRecoveryJob = null
-            switchToSourceStream(event.stream)
+            val position = com.nuvio.tv.core.player.sourceRecoveryPosition(
+                _exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition,
+                _uiState.value.pendingSeekPosition,
+                if (!hasRenderedFirstFrame && pendingResumeProgress != null) resolvePendingInitialResumePosition() else null
+            )
+            switchToSourceStream(event.stream, resumePositionMs = position)
         }
         PlayerEvent.OnDismissTransientOverlay -> {
             _uiState.update {
