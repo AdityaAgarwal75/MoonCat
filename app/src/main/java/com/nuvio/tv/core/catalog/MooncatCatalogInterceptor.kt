@@ -10,7 +10,6 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.IOException
 import java.net.URLDecoder
 import java.time.LocalDate
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** App-owned discovery descriptor. Public providers are called over verified HTTPS. */
@@ -19,8 +18,7 @@ class MooncatCatalogInterceptor(
         .readTimeout(15, TimeUnit.SECONDS).callTimeout(20, TimeUnit.SECONDS).build()
 ) : Interceptor {
     private val gson = Gson()
-    private data class Cached(val at: Long, val json: String)
-    private val cache = ConcurrentHashMap<String, Cached>()
+    private val cache = CatalogResponseCache()
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -119,12 +117,11 @@ class MooncatCatalogInterceptor(
     }
 
     private fun getJson(url: String): String {
-        cache[url]?.takeIf { System.currentTimeMillis() - it.at < TimeUnit.MINUTES.toMillis(15) }?.let { return it.json }
+        cache.get(url)?.let { return it }
         client.newCall(Request.Builder().url(url).header("User-Agent", "MoonCat/1.0").build()).execute().use {
             if (!it.isSuccessful) throw IOException("Catalog HTTP ${it.code}")
             val json = it.body?.string() ?: throw IOException("Empty catalog")
-            if (cache.size > 96) cache.clear()
-            cache[url] = Cached(System.currentTimeMillis(), json)
+            cache.put(url, json)
             return json
         }
     }

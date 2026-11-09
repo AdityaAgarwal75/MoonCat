@@ -1,10 +1,17 @@
-# MoonCat 2.0.0 Beta 11
+# MoonCat 2.0.0-beta.12
 
-- Recover automatically from intermittent addon connection failures and timeouts with one bounded retry.
-- Give queued addon requests their full network timeout once a request slot is available.
-- Keep successful sources appearing independently while slower sources recover.
-- Do not retry empty results, authentication errors, missing endpoints, or rate-limit responses.
+Playback reliability and TV performance update, based on the published Beta 11 source.
 
-Each addon attempt is limited to 15 seconds, with one retry after a 500 ms pause. An unavailable third-party server can still fail after both attempts; Retry starts a fresh search.
+- Autoplay compares fast provider responses for up to 250 ms. If the preferred audio language is missing, it allows up to 750 ms total before using the fallback; a completed search returns immediately. It does not run media downloads or competing torrent engines before Play.
+- At the same audio language and resolution, direct/resolver routes come before unprepared torrents. Torrents reporting at least five seeds, or no seed count, rank ahead of torrents reporting only one to four or zero seeds. The 3–3.5 GB preference remains within comparable availability tiers. Counts are provider claims, not speed measurements.
+- Source recovery follows the same ranking and 4 GB cap. A VOD source whose buffer stops advancing for 15 seconds can trigger recovery at the current position, including stalls before READY. Successful playback and manually paused playback are left alone. Automatic recovery remains limited to four attempts per title/episode.
+- Next-episode binge groups survive metadata sorting without overriding the preferred audio language. Torrent “Start from beginning” now honors that choice.
+- Parsing for metadata sorting is performed once per candidate. Concurrent addon/availability requests are capped across searches. Empty filtered provider groups are not cached as playable hits.
+- Discovery catalogue memory uses an LRU cache with a 4 MiB payload budget and 48-entry limit, rather than clearing all rows when a count threshold is exceeded.
+- Update downloads cancel their HTTP requests, reject incomplete/mismatched file sizes, clean partial files, throttle progress callbacks, and prevent concurrent downloads. APK package, version and signing-certificate checks remain enforced.
 
-Based on Beta 10. Includes regression tests for queue delays, transient and permanent failures, timeout limits, and cancellation. The release workflow runs the full TV unit suite and validates APK identity and signing before publication.
+## Installation
+
+Use the signed `MoonCat-v2.0.0-beta.12-FireTV.apk` to update the existing v2 app (`dev.mooncat.tv.v2`). Beta installations use the **Beta** update channel. Preview APKs are separate apps and are not compatible replacements.
+
+Provider availability, swarm health and home-network speed still determine startup and buffering. This release does not promise instant playback. Physical Fire TV testing remains necessary for measured Play-to-first-frame time, remote focus, sustained streaming, decoder support and real memory use. See `docs/AUDIT-beta12.md` for scope, research and validation.

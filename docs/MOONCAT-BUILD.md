@@ -2,11 +2,11 @@
 
 ## Current target
 
-- Version 1.0.6, versionCode 10007.
+- Version 2.0.0-beta.12, versionCode 20011.
 - Full TV variant: `:app:assembleFullRelease`.
 - Android 7.0+, compile/target SDK 36, JDK 17, Gradle 8.13.
 - ABI defaults to `armeabi-v7a`; `-PmooncatAbi=arm64-v8a` overrides it for development.
-- Standard package: `dev.mooncat.tv`. Preview: `dev.mooncat.tv.preview`.
+- Standard package: `dev.mooncat.tv.v2`. Preview: `dev.mooncat.tv.v2.preview`.
 
 ## Validation
 
@@ -30,7 +30,7 @@ NUVIO_RELEASE_KEY_ALIAS
 NUVIO_RELEASE_KEY_PASSWORD
 ```
 
-GitHub Actions reads `MOONCAT_KEYSTORE_BASE64`, `MOONCAT_KEYSTORE_PASSWORD` and `MOONCAT_KEY_ALIAS` from repository secrets. It verifies the certificate SHA-256 is `6341008335cc94f1dba060680dbedafd59ba5d5ef8017d09ff8757cccdd0ec0c` before exposing an update-compatible APK.
+GitHub Actions reads `MOONCAT_V2_KEYSTORE_BASE64`, `MOONCAT_V2_KEYSTORE_PASSWORD`, `MOONCAT_V2_KEY_ALIAS` and `MOONCAT_V2_CERT_SHA256` from repository secrets. It verifies the certificate SHA-256 against the trusted v2 certificate secret before exposing an update-compatible APK.
 
 When those secrets are unavailable, CI builds `-PmooncatPreview=true` with development signing. This produces a clearly named side-by-side Preview, never a replacement falsely labelled as a compatible update. Development signing is not a production distribution identity. Do not uninstall the working app to install Preview.
 

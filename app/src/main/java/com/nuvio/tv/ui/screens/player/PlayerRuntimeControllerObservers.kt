@@ -809,6 +809,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
             val stalledForMs = nowMs - lastAdvanceAtMs
             if (stalledForMs >= PlayerRuntimeController.STALL_WATCHDOG_THRESHOLD_MS &&
                 !userPausedManually && livePlayer.playWhenReady && !_uiState.value.isLive &&
+                contentType?.lowercase() in setOf("movie", "series", "show") &&
                 tryAlternativeSource(context.getString(R.string.player_error_source_stalled))) {
                 return@launch
             }
