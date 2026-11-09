@@ -370,15 +370,13 @@ class StreamRepositoryImpl @Inject constructor(
                     val result = rawResult.copy(streams = rawResult.streams.filter {
                         com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
                     })
-                    if (result.streams.isEmpty()) {
-                        attemptedFailures += StreamAttemptFailure(result.addonName, StreamFailureKind.MISSING,
-                            "No compatible HD files within the size limit")
-                        continue
-                    }
                     resultMutex.withLock {
                         mergeDiscoveryResult(accumulatedResults, result)
                         send(NetworkResult.Success(accumulatedResults.toList()))
                     }
+                    // Filtering every returned file is a successful empty lookup, not a
+                    // provider failure. The session cache does not retain empty groups.
+                    if (result.streams.isEmpty()) continue
                     launch {
                         val checkedResult = try {
                             withTimeoutOrNull(2_500L) {
