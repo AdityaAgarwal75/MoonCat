@@ -479,8 +479,7 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            // Every new request goes through the readiness race. Reusing an old
-            // URL here bypassed source discovery and could strand autoplay.
+            // Discover fresh routes; expired saved URLs must not bypass provider lookup.
 
             updateUiStateIfChanged {
                 it.copy(
@@ -592,7 +591,7 @@ class StreamScreenViewModel @Inject constructor(
                 )
                 val eligible = withContext(Dispatchers.Default) {
                     com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.instantOrder(
-                        candidates(autoPlayStreams), playerSettings.preferredAudioLanguage
+                        candidates(autoPlayStreams), playerSettings.preferredAudioLanguage, persistedBingeGroup
                     ).distinctBy { it.playbackRequestKey() }.take(32)
                 }
                 selectionSnapshots.value = com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot(
@@ -601,10 +600,9 @@ class StreamScreenViewModel @Inject constructor(
                 if (!autoPlayHandledForSession && !resolvedAutoPlayTarget &&
                     sourceSelectionJob?.isActive != true && eligible.isNotEmpty()) {
                     sourceSelectionJob = launch {
-                        // Start the top metadata candidate through the normal player immediately.
-                        // The player performs actual torrent setup and retains failure recovery.
-                        val selected = selectionSnapshots.first { it.candidates.isNotEmpty() || it.complete }
-                            .candidates.firstOrNull()
+                        val selected = com.nuvio.tv.core.mooncat.MetadataSourceSelector.select(
+                            selectionSnapshots, playerSettings.preferredAudioLanguage
+                        )
                         ensureActive()
                         if (selected != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {
                             resolvedAutoPlayTarget = true

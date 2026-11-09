@@ -59,7 +59,7 @@ internal fun PlayerRuntimeController.startInitialPlaybackIfNeeded() {
                 preparePlaybackBeforeStart(
                     url = localUrl,
                     headers = emptyMap(),
-                    loadSavedProgress = true
+                    loadSavedProgress = !navigationArgs.startFromBeginning
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e

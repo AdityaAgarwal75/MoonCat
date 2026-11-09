@@ -779,7 +779,7 @@ internal fun PlayerRuntimeController.cancelStallWatchdog() {
 /** Tiny skip past the buffered edge to force Media3 to cancel the in-flight Range request. */
 private val STALL_WATCHDOG_SKIP_PAST_BUFFERED_MS = PlayerStallWatchdogPolicy.SKIP_PAST_BUFFERED_MS
 
-/** Re-seeks past the buffered edge when bufferedPosition stops advancing during buffering. */
+/** Recover a stalled VOD source at the same position before the legacy self-seek workaround. */
 internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
     if (stallWatchdogJob?.isActive == true) return
     val player = _exoPlayer ?: return
@@ -787,7 +787,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
 
     stallWatchdogJob = scope.launch {
         var lastBufferedPosition = player.bufferedPosition
-        var lastAdvanceAtMs = System.currentTimeMillis()
+        var lastAdvanceAtMs = android.os.SystemClock.elapsedRealtime()
 
         while (isActive) {
             delay(PlayerRuntimeController.STALL_WATCHDOG_POLL_INTERVAL_MS)
@@ -797,7 +797,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
                 return@launch
             }
 
-            val nowMs = System.currentTimeMillis()
+            val nowMs = android.os.SystemClock.elapsedRealtime()
             val bufferedNow = livePlayer.bufferedPosition
             if (bufferedNow > lastBufferedPosition) {
                 // Real progress — reset the stall timer.
@@ -807,6 +807,11 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
             }
 
             val stalledForMs = nowMs - lastAdvanceAtMs
+            if (stalledForMs >= PlayerRuntimeController.STALL_WATCHDOG_THRESHOLD_MS &&
+                !userPausedManually && livePlayer.playWhenReady && !_uiState.value.isLive &&
+                tryAlternativeSource(context.getString(R.string.player_error_source_stalled))) {
+                return@launch
+            }
             when (
                 val decision = PlayerStallWatchdogPolicy.evaluate(
                     PlayerStallWatchdogPolicy.Input(

@@ -142,7 +142,7 @@ internal class StreamSearchSessionCache(
         session.job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 producer().collect { result ->
-                    if (result is NetworkResult.Success && result.data.isNotEmpty()) {
+                    if (result is NetworkResult.Success && result.data.any { it.streams.isNotEmpty() }) {
                         session.lastSuccessfulResult = result
                     }
                     session.state.update { current ->

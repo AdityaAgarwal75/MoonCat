@@ -5,6 +5,7 @@ import com.nuvio.tv.data.remote.api.GitHubReleaseApi
 import com.nuvio.tv.updater.model.AppUpdate
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 
 internal class NoEligibleUpdateException(channel: UpdateChannel) :
     IllegalStateException("No compatible APK release found for ${channel.storedValue} channel")
@@ -58,6 +59,6 @@ class UpdateRepository @Inject constructor(
                 assetUrl = asset.browserDownloadUrl,
                 assetSizeBytes = asset.size
             )
-        }
+        }.onFailure { if (it is CancellationException) throw it }
     }
 }

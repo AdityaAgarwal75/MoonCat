@@ -22,12 +22,37 @@ class MoonCatSourcePolicyTest {
         assertEquals(listOf(idealPopular, ideal, large, small, middle, english), MoonCatSourcePolicy.instantOrder(
             listOf(english, large, ideal, fourK, small, idealPopular, middle), "hi"))
     }
-    @Test fun `other known sizes remain fallbacks before unknown sizes`() {
+    @Test fun `ready direct routes beat unprepared torrents at equal language and resolution`() {
         val unknown = source("Hindi 1080p 3.9 GB 👤 500").copy(infoHash = "unknown")
         val clean = source("Hindi 1080p WEB-DL 1.4 GB 👤 50").copy(infoHash = "clean")
         val direct = source("Hindi 1080p WEB-DL", "https://media.example/video")
-        assertEquals(listOf(unknown, clean, direct), MoonCatSourcePolicy.instantOrder(
+        assertEquals(listOf(direct, unknown, clean), MoonCatSourcePolicy.instantOrder(
             listOf(unknown, clean, direct), "hi"))
+    }
+    @Test fun `healthy smaller swarm beats preferred size with zero or few seeds`() {
+        val dead = source("Hindi 1080p 3.3 GB 👤 0").copy(infoHash = "dead")
+        val weak = source("Hindi 1080p 3.2 GB Seeds: 2").copy(infoHash = "weak")
+        val live = source("Hindi 1080p 1.5 GB 👤 150").copy(infoHash = "live")
+        val unknown = source("Hindi 1080p 2 GB").copy(infoHash = "unknown")
+        assertEquals(listOf(live, unknown, weak, dead),
+            MoonCatSourcePolicy.instantOrder(listOf(dead, weak, unknown, live), "hi"))
+    }
+
+    @Test fun `invalid structured size falls back to release metadata`() {
+        val video = source("Hindi 1080p 3.2 GB").copy(behaviorHints =
+            com.nuvio.tv.domain.model.StreamBehaviorHints(null, null, null, null, videoSize = 0))
+        assertEquals(3_200_000_000L, MoonCatSourcePolicy.sizeBytes(video))
+        assertTrue(MoonCatSourcePolicy.visibleSource(video))
+        assertNull(MoonCatSourcePolicy.sizeBytes(source("Size: 0 MB")))
+    }
+
+    @Test fun `binge group survives ranking without displacing preferred audio`() {
+        val fresh = source("Hindi 1080p 3.3 GB 👤 500").copy(infoHash = "fresh")
+        val next = source("Hindi 720p 500 MB 👤 10").copy(infoHash = "next", behaviorHints =
+            com.nuvio.tv.domain.model.StreamBehaviorHints(null, "series-group", null, null))
+        assertEquals(next, MoonCatSourcePolicy.instantOrder(listOf(fresh, next), "hi", "series-group").first())
+        val englishNext = next.copy(name = "English 720p 500 MB")
+        assertEquals(fresh, MoonCatSourcePolicy.instantOrder(listOf(englishNext, fresh), "hi", "series-group").first())
     }
     @Test fun `readiness order prioritizes well seeded candidates`() {
         val highResolution = source("English 720p 👤 126 2 GB")

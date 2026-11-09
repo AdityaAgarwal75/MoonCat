@@ -28,9 +28,9 @@ object MoonCatSourcePolicy {
         stream.clientResolve?.stream?.raw?.parsed?.resolution,
         stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
-    fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize
-        ?: stream.clientResolve?.stream?.raw?.size
-        ?: stream.debridCacheStatus?.cachedSize
+    fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize?.takeIf { it > 0 }
+        ?: stream.clientResolve?.stream?.raw?.size?.takeIf { it > 0 }
+        ?: stream.debridCacheStatus?.cachedSize?.takeIf { it > 0 }
         ?: sizePattern.find(text(stream))?.let {
             val multiplier = when (it.groupValues[2].lowercase()) {
                 "gib" -> 1_073_741_824.0
@@ -38,7 +38,7 @@ object MoonCatSourcePolicy {
                 "mib" -> 1_048_576.0
                 else -> 1_000_000.0
             }
-            (it.groupValues[1].toDouble() * multiplier).toLong()
+            (it.groupValues[1].toDouble() * multiplier).toLong().takeIf { bytes -> bytes > 0 }
         }
 
     fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES, allow4k: Boolean = false): Boolean {
@@ -152,33 +152,51 @@ object MoonCatSourcePolicy {
     }
 
     /** Seed counts are availability hints, never measured bandwidth. */
-    fun advertisedSeeders(stream: Stream): Int {
+    fun advertisedSeeders(stream: Stream): Int = seederCount(stream) ?: 0
+
+    private fun seederCount(stream: Stream): Int? {
         val content = text(stream)
         val afterIcon = seederIcon.find(content)?.groupValues?.get(1)
         val named = seederLabel.find(content)?.groupValues?.get(1)
-        return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
+        return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull()
     }
 
-    /** Fast autoplay order from addon metadata. Seeders are hints, not measured bandwidth. */
-    fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
-        streams.filter { suitable(it, USER_MAX_FILE_BYTES) && !it.isExternal() }
-            .sortedWith(compareBy<Stream> { languageTier(it, language) }
-                .thenBy { qualityTier(it) }
-                // A 3-3.5 GB 1080p release was observed to start quickly and look better.
-                // Unknown sizes remain available when no sized source is advertised.
-                .thenBy { stream ->
-                    val size = sizeBytes(stream)
-                    when {
-                        size == null -> 3
-                        size in 3_000_000_000L..3_500_000_000L -> 0
-                        size in 2_500_000_000L..USER_MAX_FILE_BYTES -> 1
-                        else -> 2
-                    }
-                }
-                .thenByDescending { advertisedSeeders(it) }
-                .thenBy { releaseTier(it) }
-                .thenByDescending { sizeBytes(it) ?: -1L }
-            )
+    private data class InstantCandidate(
+        val stream: Stream, val language: Int, val quality: Int, val availability: Int,
+        val sizeBand: Int, val seeders: Int, val release: Int, val size: Long
+    )
+
+    /** Parse metadata once per item, rather than on every comparison on a TV CPU.
+     * A ready HTTP/resolver route and an advertised healthy swarm beat a nearly dead
+     * preferred-size torrent at equal language/resolution. Seed counts remain hints.
+     */
+    fun instantOrder(streams: List<Stream>, language: String, preferredBingeGroup: String? = null): List<Stream> = streams.asSequence()
+        .filter { suitable(it, USER_MAX_FILE_BYTES) && !it.isExternal() }
+        .map { stream ->
+            val size = sizeBytes(stream)
+            val seeders = seederCount(stream)
+            InstantCandidate(stream, languageTier(stream, language), qualityTier(stream),
+                when {
+                    !stream.isTorrent() -> 0
+                    seeders == null || seeders >= 5 -> 1
+                    seeders > 0 -> 2
+                    else -> 3
+                },
+                when {
+                    size == null -> 3
+                    size in 3_000_000_000L..3_500_000_000L -> 0
+                    size in 2_500_000_000L..USER_MAX_FILE_BYTES -> 1
+                    else -> 2
+                }, seeders ?: 0, releaseTier(stream), size ?: -1L)
+        }.sortedWith(compareBy<InstantCandidate> { it.language }.thenBy { it.quality }
+            .thenBy { it.availability }.thenBy { it.sizeBand }.thenByDescending { it.seeders }
+            .thenBy { it.release }.thenByDescending { it.size })
+        .map { it.stream }.toList().let { ordered ->
+            val bestLanguage = ordered.firstOrNull()?.let { languageTier(it, language) }
+            val binge = ordered.firstOrNull { preferredBingeGroup != null &&
+                it.behaviorHints?.bingeGroup == preferredBingeGroup && languageTier(it, language) == bestLanguage }
+            if (binge == null) ordered else listOf(binge) + ordered.filter { it !== binge }
+        }
 
     /** Include well-seeded options early in the readiness race across resolutions. */
     fun readinessOrder(streams: List<Stream>, language: String): List<Stream> =

@@ -20,7 +20,24 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StreamSearchSessionCacheTest {
     private val key = StreamSearchRequestKey(1, "movie", "tt1", null, null, "config")
-    private val success = NetworkResult.Success(listOf(AddonStreams("source", null, emptyList())))
+    private val success = NetworkResult.Success(listOf(AddonStreams("source", null,
+        listOf(com.nuvio.tv.core.mooncat.source("Hindi 1080p")))))
+
+    @Test fun `empty provider groups are not retained as a playable cache hit`() = runTest {
+        val cache = StreamSearchSessionCache(backgroundScope)
+        var searches = 0
+        val producer = {
+            searches++
+            flowOf<NetworkResult<List<AddonStreams>>>(NetworkResult.Success(listOf(AddonStreams("empty", null, emptyList()))))
+        }
+        repeat(2) {
+            val result = async { cache.observe(key, false, producer).toList() }
+            runCurrent()
+            result.await()
+            assertNull(cache.peek(key))
+        }
+        assertEquals(2, searches)
+    }
 
     @Test
     fun `abandoned search cancels after transition grace`() = runTest {

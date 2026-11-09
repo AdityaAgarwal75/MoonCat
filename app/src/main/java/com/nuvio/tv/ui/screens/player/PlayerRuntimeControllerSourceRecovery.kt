@@ -22,7 +22,7 @@ internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String)
     val position = (_exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition).coerceAtLeast(0L)
     sourceRecoveryJob = scope.launch {
         showRecoveryOverlay()
-        _uiState.update { it.copy(loadingMessage = "Trying another source…") }
+        _uiState.update { it.copy(loadingMessage = context.getString(com.nuvio.tv.R.string.player_trying_another_source)) }
         try {
             val settings = playerSettingsDataStore.playerSettings.first()
             val language = settings.preferredAudioLanguage

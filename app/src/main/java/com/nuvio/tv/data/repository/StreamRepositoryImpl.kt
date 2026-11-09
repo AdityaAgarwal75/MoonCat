@@ -71,6 +71,10 @@ class StreamRepositoryImpl @Inject constructor(
     private val serverStreams: ServerStreams
 ) : StreamRepository {
     private val streamSearchSessions = StreamSearchSessionCache()
+    // Shared by detail warmups and foreground searches. Four sessions must not
+    // accidentally launch sixteen simultaneous addon calls on a 1 GB stick.
+    private val addonSlots = Semaphore(4)
+    private val availabilitySlots = Semaphore(2)
     private val localPluginSearchPaused = MutableStateFlow(false)
 
     override fun setLocalPluginSearchPaused(paused: Boolean) {
@@ -208,8 +212,6 @@ class StreamRepositoryImpl @Inject constructor(
             val streamAddons = addons.filter { addon ->
                 addon.supportsStreamResource(requestType, requestId)
             }
-            val addonSlots = Semaphore(4)
-            val availabilitySlots = Semaphore(2)
             val resultMutex = Mutex()
 
             val attemptedAddonNames = streamAddons.map { it.displayName } + serverSources.map { it.name }
@@ -368,6 +370,11 @@ class StreamRepositoryImpl @Inject constructor(
                     val result = rawResult.copy(streams = rawResult.streams.filter {
                         com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
                     })
+                    if (result.streams.isEmpty()) {
+                        attemptedFailures += StreamAttemptFailure(result.addonName, StreamFailureKind.MISSING,
+                            "No compatible HD files within the size limit")
+                        continue
+                    }
                     resultMutex.withLock {
                         mergeDiscoveryResult(accumulatedResults, result)
                         send(NetworkResult.Success(accumulatedResults.toList()))
