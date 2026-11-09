@@ -134,14 +134,9 @@ private fun Stream.isReadyForDebridPreparation(): Boolean =
         (isDirectDebrid() || (needsLocalDebridResolve() && debridCacheStatus?.state == StreamDebridCacheState.CACHED))
 
 internal fun PlayerRuntimeController.showSourcesPanel() {
-    sourceRecoveryJob?.cancel()
-    sourceRecoveryJob = null
     _uiState.update {
         it.copy(
             showSourcesPanel = true,
-            error = null,
-            showPauseOverlay = false,
-            showStreamInfoOverlay = false,
             showControls = true,
             showAudioOverlay = false,
             showSubtitleOverlay = false,
@@ -647,7 +642,6 @@ private fun PlayerRuntimeController.applySelectedStreamState(
  * of stream type — critical for next-episode binge matching.
  */
 private fun PlayerRuntimeController.applyStreamMetadata(stream: Stream) {
-    _uiState.update { it.copy(currentStreamDescription = stream.description ?: stream.title ?: stream.behaviorHints?.filename) }
     currentStreamBingeGroup = stream.behaviorHints?.bingeGroup
     applyStreamAudioDelay(stream.behaviorHints?.audioDelayMs)
     currentVideoHash = stream.behaviorHints?.videoHash

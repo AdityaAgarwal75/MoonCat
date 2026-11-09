@@ -12,7 +12,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** Called only after a real playback failure, never because an audio language is missing. */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String): Boolean {
-    if (_uiState.value.showSourcesPanel) return false // Manual source browsing owns the choice.
     if (audioLanguageSearchJob?.isActive == true) return false
     if (_uiState.value.isServerStream || contentType.isNullOrBlank()) return false
     if (sourceRecoveryJob?.isActive == true) return true
