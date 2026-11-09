@@ -345,7 +345,7 @@ fun PlayerScreen(
             exitPlayer()
         } else if (shouldConfirmNextEpisodeOnEnd) {
             returnToDetailsFromEndPrompt()
-        } else if (uiState.error != null) {
+        } else if (uiState.error != null && !uiState.showSourcesPanel) {
             exitPlayerFromError()
         } else if (uiState.showAudioOverlay || uiState.showSubtitleOverlay) {
             viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay)
@@ -1290,7 +1290,7 @@ fun PlayerScreen(
         )
 
         // Error state
-        if (uiState.error != null) {
+        if (uiState.error != null && !uiState.showSourcesPanel) {
             ErrorOverlay(
                 message = uiState.error!!,
                 showSwitchToMpvAction = uiState.showSwitchToMpvErrorAction &&
