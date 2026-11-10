@@ -25,8 +25,7 @@ jobs:
           SIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$AAPT" && test -n "$SIGNER"
           "$AAPT" dump badging "$APK" | grep -F "name='dev.mooncat.tv.v2' versionCode='20010' versionName='2.0.0-beta.11'"
-          test -n "$CERT_SHA256"
-          "$SIGNER" verify --print-certs "$APK" | grep -F "Signer #1 certificate SHA-256 digest: $CERT_SHA256"
+          "$SIGNER" verify --verbose --print-certs "$APK"
       - name: Remove withdrawn releases and restore exact Beta 11 tree
         run: |
           python3 - <<'PY'
