@@ -1,10 +1,12 @@
-# MoonCat 2.0.0 Beta 11
+# MoonCat 2.0.0-beta.15
 
-- Recover automatically from intermittent addon connection failures and timeouts with one bounded retry.
-- Give queued addon requests their full network timeout once a request slot is available.
-- Keep successful sources appearing independently while slower sources recover.
-- Do not retry empty results, authentication errors, missing endpoints, or rate-limit responses.
+Beta 11 restored as an installable update.
 
-Each addon attempt is limited to 15 seconds, with one retry after a 500 ms pause. An unavailable third-party server can still fail after both attempts; Retry starts a fresh search.
+This release uses Beta 11's app code, features, source selection, playback behavior, photos and branding. Only the app version has changed so it installs over Beta 12, 13 or 14 without requiring an uninstall.
 
-Based on Beta 10. Includes regression tests for queue delays, transient and permanent failures, timeout limits, and cancellation. The release workflow runs the full TV unit suite and validates APK identity and signing before publication.
+- Version name: 2.0.0-beta.15
+- Version code: 20014, higher than Beta 14's 20013
+- Application ID: dev.mooncat.tv.v2
+- Signed with the existing MoonCat v2 release key
+
+No Beta 12, 13 or 14 app features are included. Existing app data is retained by Android's normal update process. Physical TV update and playback behavior still require device testing.
