@@ -1,0 +1,74 @@
+name: Restore Beta 11 releases
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/restore-beta11.yml']
+permissions:
+  contents: write
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CERT_SHA256: ${{ secrets.MOONCAT_V2_CERT_SHA256 }}
+    steps:
+      - name: Verify original Beta 11 APK
+        run: |
+          mkdir -p "$RUNNER_TEMP/beta11"
+          gh release download v2.0.0-beta.11 --pattern '*.apk' --pattern SHA256SUMS --dir "$RUNNER_TEMP/beta11"
+          cd "$RUNNER_TEMP/beta11"
+          sha256sum -c SHA256SUMS
+          APK="MoonCat-v2.0.0-beta.11-FireTV.apk"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -1)"
+          SIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$AAPT" && test -n "$SIGNER"
+          "$AAPT" dump badging "$APK" | grep -F "name='dev.mooncat.tv.v2' versionCode='20010' versionName='2.0.0-beta.11'"
+          test -n "$CERT_SHA256"
+          "$SIGNER" verify --print-certs "$APK" | grep -F "Signer #1 certificate SHA-256 digest: $CERT_SHA256"
+      - name: Remove withdrawn releases and restore exact Beta 11 tree
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          repo = os.environ['GH_REPO']
+          def api(path, method='GET', payload=None):
+              cmd = ['gh', 'api', '--method', method, f'repos/{repo}/{path}']
+              if payload is not None:
+                  cmd += ['--input', '-']
+              result = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None, text=True, capture_output=True, check=True)
+              return json.loads(result.stdout) if result.stdout.strip() else None
+          head = api('git/ref/heads/main')['object']['sha']
+          assert head == os.environ['GITHUB_SHA'], 'main changed; refusing rollback'
+          target = api('git/commits/d7387f5ed2913c50b1efa3128e8b7f0609f36d5a')['tree']['sha']
+          assert target == 'bb466f2cfeaf7bd2cd1b99abe50b525d979ae074'
+          keep = api('releases/tags/v2.0.0-beta.11')
+          assert keep['id'] == 432953189 and not keep['draft']
+          withdrawn = []
+          for tag, expected in [('v2.0.0-beta.12', 439225413), ('v2.0.0-beta.13', 439307064)]:
+              release = api('releases/tags/' + tag)
+              assert release['id'] == expected and release['tag_name'] == tag
+              withdrawn.append((tag, expected))
+          beta14 = api('releases/439991194')
+          assert beta14['tag_name'] == 'v2.0.0-beta.14'
+          api('releases/439991194', 'PATCH', {'draft': True})
+          for tag, release_id in withdrawn:
+              api(f'releases/{release_id}', 'DELETE')
+              api('git/refs/tags/' + tag, 'DELETE')
+              print('Deleted release and tag:', tag)
+          commit = api('git/commits', 'POST', {
+              'message': 'Restore original Beta 11 after withdrawing newer betas [skip ci]',
+              'tree': target, 'parents': [head]
+          })
+          assert api('git/ref/heads/main')['object']['sha'] == head, 'main changed; refusing ref update'
+          api('git/refs/heads/main', 'PATCH', {'sha': commit['sha'], 'force': False})
+          restored = api('git/commits/' + commit['sha'])
+          assert restored['tree']['sha'] == target
+          releases = api('releases?per_page=100')
+          public_tags = {r['tag_name'] for r in releases if not r['draft']}
+          assert keep['tag_name'] in public_tags
+          assert not public_tags.intersection({'v2.0.0-beta.12', 'v2.0.0-beta.13', 'v2.0.0-beta.14'})
+          print('Beta 14 retained as unpublished draft.')
+          print('Restored exact Beta 11 tree at main:', commit['sha'])
+          print('Verified Beta 12/13/14 absent from public release feed.')
+          PY
