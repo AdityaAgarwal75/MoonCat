@@ -1,4 +1,10 @@
 <resources>
+    <string name="player_source_failed">Selected source failed</string>
+    <string name="player_selected_source">Selected source</string>
+    <string name="player_source_loading">Loading selected source</string>
+    <string name="player_source_playing">Playing source</string>
+    <string name="player_change_source">Change source</string>
+    <string name="player_source_remote_hint">Press RIGHT or MENU to change source</string>
     <string name="player_error_source_stalled">This source stopped delivering video. Try another source.</string>
     <string name="player_trying_another_source">Trying another source…</string>
     <string name="app_name">MoonCat</string>
