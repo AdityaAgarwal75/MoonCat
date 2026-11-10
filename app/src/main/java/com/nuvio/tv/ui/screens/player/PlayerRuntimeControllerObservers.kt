@@ -1,7 +1,6 @@
 package com.nuvio.tv.ui.screens.player
 
 import android.util.Log
-import com.nuvio.tv.R
 import com.nuvio.tv.core.player.OpenSubtitlesHasher
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -780,7 +779,7 @@ internal fun PlayerRuntimeController.cancelStallWatchdog() {
 /** Tiny skip past the buffered edge to force Media3 to cancel the in-flight Range request. */
 private val STALL_WATCHDOG_SKIP_PAST_BUFFERED_MS = PlayerStallWatchdogPolicy.SKIP_PAST_BUFFERED_MS
 
-/** Recover a stalled VOD source at the same position before the legacy self-seek workaround. */
+/** Re-seeks past the buffered edge when bufferedPosition stops advancing during buffering. */
 internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
     if (stallWatchdogJob?.isActive == true) return
     val player = _exoPlayer ?: return
@@ -788,7 +787,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
 
     stallWatchdogJob = scope.launch {
         var lastBufferedPosition = player.bufferedPosition
-        var lastAdvanceAtMs = android.os.SystemClock.elapsedRealtime()
+        var lastAdvanceAtMs = System.currentTimeMillis()
 
         while (isActive) {
             delay(PlayerRuntimeController.STALL_WATCHDOG_POLL_INTERVAL_MS)
@@ -798,7 +797,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
                 return@launch
             }
 
-            val nowMs = android.os.SystemClock.elapsedRealtime()
+            val nowMs = System.currentTimeMillis()
             val bufferedNow = livePlayer.bufferedPosition
             if (bufferedNow > lastBufferedPosition) {
                 // Real progress — reset the stall timer.
@@ -808,12 +807,6 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
             }
 
             val stalledForMs = nowMs - lastAdvanceAtMs
-            if (stalledForMs >= PlayerRuntimeController.STALL_WATCHDOG_THRESHOLD_MS &&
-                !userPausedManually && livePlayer.playWhenReady && !_uiState.value.isLive &&
-                contentType?.lowercase() in setOf("movie", "series", "show") &&
-                tryAlternativeSource(context.getString(R.string.player_error_source_stalled))) {
-                return@launch
-            }
             when (
                 val decision = PlayerStallWatchdogPolicy.evaluate(
                     PlayerStallWatchdogPolicy.Input(

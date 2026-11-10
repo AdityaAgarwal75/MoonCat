@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -47,7 +46,6 @@ class UpdateViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(UpdateUiState())
     val uiState: StateFlow<UpdateUiState> = _uiState.asStateFlow()
     private var updateCheckJob: Job? = null
-    private var downloadJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -66,7 +64,6 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun checkForUpdates(force: Boolean, showNoUpdateFeedback: Boolean) {
-        if (downloadJob?.isActive == true) return
         if (!force && !_uiState.value.updateBannerEnabled) return
 
         updateCheckJob?.cancel()
@@ -199,7 +196,6 @@ class UpdateViewModel @Inject constructor(
         if (state.updateChannel == channel) return
 
         updateCheckJob?.cancel()
-        downloadJob?.cancel()
         state.downloadedApkPath?.let { File(it).delete() }
         _uiState.update {
             it.copy(
@@ -225,10 +221,9 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun downloadUpdate() {
-        if (downloadJob?.isActive == true) return
         val update = _uiState.value.update ?: return
 
-        downloadJob = viewModelScope.launch {
+        viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isDownloading = true,
@@ -240,22 +235,20 @@ class UpdateViewModel @Inject constructor(
             val safeName = update.assetName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             val destination = File(File(context.cacheDir, "updates"), safeName)
             val result = withContext(Dispatchers.IO) {
-                apkDownloader.download(update.assetUrl, destination, onProgress = { downloaded, total ->
+                apkDownloader.download(update.assetUrl, destination) { downloaded, total ->
                     val progress = if (total != null && total > 0) {
                         (downloaded.toFloat() / total.toFloat()).coerceIn(0f, 1f)
                     } else {
                         null
                     }
                     _uiState.update { it.copy(downloadProgress = progress) }
-                }, expectedSizeBytes = update.assetSizeBytes)
+                }
             }
 
             val verifiedResult = result.mapCatching { file ->
                 withContext(Dispatchers.IO) { ApkInstaller.validateDownloadedUpdate(context, file) }
                 file
             }
-            // A cancelled channel/download must not overwrite the state of the next one.
-            coroutineContext.ensureActive()
             verifiedResult
                 .onSuccess { file ->
                     _uiState.update {

@@ -1,12 +1,10 @@
-# MoonCat 2.0.0-beta.14
+# MoonCat 2.0.0 Beta 11
 
-Source controls only when loading or buffering.
+- Recover automatically from intermittent addon connection failures and timeouts with one bounded retry.
+- Give queued addon requests their full network timeout once a request slot is available.
+- Keep successful sources appearing independently while slower sources recover.
+- Do not retry empty results, authentication errors, missing endpoints, or rate-limit responses.
 
-- The right-side selected-source card now disappears when loading finishes. Opening normal playback controls or pausing the video does not bring it back.
-- If playback buffers again, the card returns so you can inspect the selected source and choose **Change source**. It disappears again when buffering ends.
-- **RIGHT** and **MENU** still open the source picker while loading. The picker remains above the loading screen and supports sources already found while slower addons continue searching.
-- Manual switching retains Beta 13's resume-position handling and protection against automatic recovery overriding a manual choice.
+Each addon attempt is limited to 15 seconds, with one retry after a 500 ms pause. An unavailable third-party server can still fail after both attempts; Retry starts a fresh search.
 
-All photos, branding, providers and playback selection policies are unchanged. This restores the Beta 13 source controls with the loading-only visibility correction. Signed update for `dev.mooncat.tv.v2`, versionCode 20013.
-
-Regression coverage includes playback with controls open, paused playback, initial loading and rebuffering. Physical Fire TV navigation and real network playback still require device testing.
+Based on Beta 10. Includes regression tests for queue delays, transient and permanent failures, timeout limits, and cancellation. The release workflow runs the full TV unit suite and validates APK identity and signing before publication.

@@ -12,7 +12,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 /** Called only after a real playback failure, never because an audio language is missing. */
 @androidx.annotation.OptIn(UnstableApi::class)
 internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String): Boolean {
-    if (_uiState.value.showSourcesPanel) return false // Manual source browsing owns the choice.
     if (audioLanguageSearchJob?.isActive == true) return false
     if (_uiState.value.isServerStream || contentType.isNullOrBlank()) return false
     if (sourceRecoveryJob?.isActive == true) return true
@@ -20,15 +19,10 @@ internal fun PlayerRuntimeController.tryAlternativeSource(detailedError: String)
     if (!sourceFailoverSession.begin(requestKey, currentStreamUrl,
             _uiState.value.currentStreamInfoHash, _uiState.value.currentStreamFileIdx, currentHeaders, _uiState.value.isTorrentStream)) return false
     val failedUrl = currentStreamUrl
-    val position = com.nuvio.tv.core.player.sourceRecoveryPosition(
-        currentPositionMs = _exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition,
-        pendingSeekPositionMs = _uiState.value.pendingSeekPosition,
-        initialResumePositionMs = if (!hasRenderedFirstFrame && pendingResumeProgress != null)
-            resolvePendingInitialResumePosition() else null
-    )
+    val position = (_exoPlayer?.currentPosition ?: _playbackTimeline.value.currentPosition).coerceAtLeast(0L)
     sourceRecoveryJob = scope.launch {
         showRecoveryOverlay()
-        _uiState.update { it.copy(loadingMessage = context.getString(com.nuvio.tv.R.string.player_trying_another_source)) }
+        _uiState.update { it.copy(loadingMessage = "Trying another source…") }
         try {
             val settings = playerSettingsDataStore.playerSettings.first()
             val language = settings.preferredAudioLanguage

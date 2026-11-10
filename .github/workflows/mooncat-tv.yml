@@ -108,7 +108,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
       - name: Publish signed v2 release
-        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/work/mooncat-v2' || github.ref == 'refs/heads/work/mooncat-fast-start' || github.ref == 'refs/heads/improve/source-selection-beta7' || github.ref == 'refs/heads/fix/stream-recovery-beta11') && steps.identity.outputs.preview == 'false'
+        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/work/mooncat-v2' || github.ref == 'refs/heads/work/mooncat-fast-start' || github.ref == 'refs/heads/improve/source-selection-beta7' || github.ref == 'refs/heads/fix/stream-recovery-beta11') && steps.identity.outputs.preview == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

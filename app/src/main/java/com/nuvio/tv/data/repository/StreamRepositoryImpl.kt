@@ -71,10 +71,6 @@ class StreamRepositoryImpl @Inject constructor(
     private val serverStreams: ServerStreams
 ) : StreamRepository {
     private val streamSearchSessions = StreamSearchSessionCache()
-    // Shared by detail warmups and foreground searches. Four sessions must not
-    // accidentally launch sixteen simultaneous addon calls on a 1 GB stick.
-    private val addonSlots = Semaphore(4)
-    private val availabilitySlots = Semaphore(2)
     private val localPluginSearchPaused = MutableStateFlow(false)
 
     override fun setLocalPluginSearchPaused(paused: Boolean) {
@@ -212,6 +208,8 @@ class StreamRepositoryImpl @Inject constructor(
             val streamAddons = addons.filter { addon ->
                 addon.supportsStreamResource(requestType, requestId)
             }
+            val addonSlots = Semaphore(4)
+            val availabilitySlots = Semaphore(2)
             val resultMutex = Mutex()
 
             val attemptedAddonNames = streamAddons.map { it.displayName } + serverSources.map { it.name }
@@ -374,9 +372,6 @@ class StreamRepositoryImpl @Inject constructor(
                         mergeDiscoveryResult(accumulatedResults, result)
                         send(NetworkResult.Success(accumulatedResults.toList()))
                     }
-                    // Filtering every returned file is a successful empty lookup, not a
-                    // provider failure. The session cache does not retain empty groups.
-                    if (result.streams.isEmpty()) continue
                     launch {
                         val checkedResult = try {
                             withTimeoutOrNull(2_500L) {

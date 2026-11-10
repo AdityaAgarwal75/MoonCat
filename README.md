@@ -4,7 +4,7 @@
 
 A remote-first media discovery and playback app for Android TV and Amazon Fire TV, derived from [NuvioTV](https://github.com/NuvioMedia/NuvioTV).
 
-[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Latest audit](docs/AUDIT-beta12.md)
+[Download APKs](https://github.com/AdityaAgarwal75/MoonCat/releases) · [Build status](https://github.com/AdityaAgarwal75/MoonCat/actions/workflows/mooncat-tv.yml) · [Build guide](docs/MOONCAT-BUILD.md) · [Latest audit](docs/PLAYBACK-ENGINE-v1.1.0.md)
 
 ## What it does
 
@@ -14,7 +14,7 @@ A remote-first media discovery and playback app for Android TV and Amazon Fire T
 - Prefer Hindi/English and HD, keep playable language/quality fallbacks, and try alternative sources after real playback failures.
 - Use the official YouTube catalogue, configured addons, or personal media servers.
 - Browse 20 Indian news channels, grouped by language.
-- TV source discovery keeps HD files up to 4 GB; autoplay prefers Hindi/English, 1080p, and available routes with sensible size fallbacks.
+- Optional **4K on fast servers** in Playback settings: hardware 4K support plus a larger speed sample; otherwise use HD.
 - Resume viewing, switch audio/subtitles, and check GitHub for updates.
 - A missing Hindi track never automatically replaces a playing file. Explicit language-source search stays available in the audio menu.
 
@@ -22,7 +22,7 @@ Sources are supplied by independent services. Catalogue entries do not guarantee
 
 ## Install the right APK
 
-The TV target is Android 7.0+ and `armeabi-v7a`, including Fire TV Stick 3rd generation. A v2 update must retain `dev.mooncat.tv.v2` and the original signing certificate. **MoonCat Preview** uses `dev.mooncat.tv.v2.preview` and installs alongside it when trusted signing is unavailable. Profiles and settings are separate in Preview.
+The TV target is Android 7.0+ and `armeabi-v7a`, including Fire TV Stick 3rd generation. A regular update must retain `dev.mooncat.tv` and the original signing certificate. **MoonCat Preview** uses `dev.mooncat.tv.preview` and installs alongside it when trusted signing is unavailable. Profiles and settings are separate in Preview.
 
 The `mobile/` directory is an earlier experimental app, not a feature-complete phone version of this TV app.
 

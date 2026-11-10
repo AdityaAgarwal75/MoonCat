@@ -78,10 +78,6 @@ internal fun StreamSourcesSidePanel(
     val scope = rememberCoroutineScope()
     var focusJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     val closeButtonFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        runCatching { closeButtonFocusRequester.requestFocus() }
-    }
 
     val orderedAddonNames = remember(uiState.sourceAvailableAddons, uiState.sourceChips) {
         buildList {
@@ -145,7 +141,7 @@ internal fun StreamSourcesSidePanel(
     // Request initial focus when loading finishes and streams are available,
     // only if the user has not navigated away or focused the chips row.
     LaunchedEffect(uiState.isLoadingSourceStreams, firstStreamKey, userMovedFromFirstResult, firstResultFocusAssigned) {
-        if (firstStreamKey != null &&
+        if (!uiState.isLoadingSourceStreams && firstStreamKey != null &&
             !userMovedFromFirstResult && !firstResultFocusAssigned
         ) {
             firstResultFocusAssigned = true
@@ -281,9 +277,6 @@ internal fun StreamSourcesSidePanel(
 
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
 
-            SelectedSourceDetails(uiState = uiState)
-            Spacer(modifier = Modifier.height(NuvioTheme.spacing.md))
-
             AnimatedVisibility(
                 visible = uiState.sourceChips.isNotEmpty() || uiState.sourceAvailableAddons.isNotEmpty(),
                 enter = fadeIn(animationSpec = tween(200)),
@@ -315,7 +308,7 @@ internal fun StreamSourcesSidePanel(
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.lg))
 
             when {
-                uiState.isLoadingSourceStreams && uiState.sourceFilteredStreams.isEmpty() -> {
+                uiState.isLoadingSourceStreams -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -326,7 +319,7 @@ internal fun StreamSourcesSidePanel(
                     }
                 }
 
-                uiState.sourceStreamsError != null && uiState.sourceFilteredStreams.isEmpty() -> {
+                uiState.sourceStreamsError != null -> {
                     Text(
                         text = uiState.sourceStreamsError,
                         style = MaterialTheme.typography.bodyLarge,

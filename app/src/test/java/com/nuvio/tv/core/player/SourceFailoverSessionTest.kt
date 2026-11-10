@@ -5,14 +5,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SourceFailoverSessionTest {
-    @Test fun `recovery applies same size cap and healthy swarm ranking as autoplay`() {
-        val session = SourceFailoverSession()
-        session.begin("movie:a", "https://failed", null, null)
-        val oversized = source("Hindi 1080p 18 GB 👤 2000").copy(infoHash = "large")
-        val weak = source("Hindi 1080p 3.2 GB 👤 1").copy(infoHash = "weak")
-        val live = source("Hindi 1080p 1.8 GB 👤 500").copy(infoHash = "live")
-        assertEquals(listOf(live, weak), session.candidates(listOf(oversized, weak, live), "hi"))
-    }
     @Test fun `dead source and duplicate urls are excluded across providers`() {
         val session = SourceFailoverSession()
         assertTrue(session.begin("movie:a", "https://dead/video", null, null))

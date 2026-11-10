@@ -224,7 +224,6 @@ fun PlayerScreen(
     val episodesFocusRequester = remember { FocusRequester() }
     val streamsFocusRequester = remember { FocusRequester() }
     val sourceStreamsFocusRequester = remember { FocusRequester() }
-    val currentSourceFocusRequester = remember { FocusRequester() }
     val skipIntroFocusRequester = remember { FocusRequester() }
     val streamInfoFocusRequester = remember { FocusRequester() }
     val postPlayRecommendationFocusRequester = remember { FocusRequester() }
@@ -345,7 +344,7 @@ fun PlayerScreen(
             exitPlayer()
         } else if (shouldConfirmNextEpisodeOnEnd) {
             returnToDetailsFromEndPrompt()
-        } else if (uiState.error != null && !uiState.showSourcesPanel) {
+        } else if (uiState.error != null) {
             exitPlayerFromError()
         } else if (uiState.showAudioOverlay || uiState.showSubtitleOverlay) {
             viewModel.onEvent(PlayerEvent.OnDismissTransientOverlay)
@@ -372,7 +371,7 @@ fun PlayerScreen(
         } else if (uiState.showPartyPanel) {
             viewModel.onEvent(PlayerEvent.OnDismissPartyPanel)
         } else if (uiState.showSourcesPanel) {
-            if (!sourcePanelCanReturnToPlayer(uiState)) {
+            if (uiState.currentStreamUrl.isNullOrBlank()) {
                 exitPlayer()
             } else {
                 viewModel.onEvent(PlayerEvent.OnDismissSourcesPanel)
@@ -535,8 +534,6 @@ fun PlayerScreen(
     // Request focus for key events when controls visibility or panel state changes
     LaunchedEffect(
         uiState.showControls,
-        uiState.showLoadingOverlay,
-        uiState.isBuffering,
         uiState.showEpisodesPanel,
         uiState.showSourcesPanel,
         uiState.showPartyPanel,
@@ -552,11 +549,7 @@ fun PlayerScreen(
         if (shouldConfirmNextEpisodeOnEnd || postPlayRecommendationState.isVisible) return@LaunchedEffect
         if (uiState.error != null) return@LaunchedEffect
         if (uiState.showPartyPanel) return@LaunchedEffect
-        if (shouldShowSourceControl(uiState, postPlayRecommendationState.isVisible) &&
-            (uiState.showLoadingOverlay || uiState.isBuffering)) {
-            kotlinx.coroutines.delay(160)
-            runCatching { currentSourceFocusRequester.requestFocus() }
-        } else if (uiState.showControls && !uiState.showEpisodesPanel && !uiState.showSourcesPanel &&
+        if (uiState.showControls && !uiState.showEpisodesPanel && !uiState.showSourcesPanel &&
             !uiState.showAudioOverlay && !uiState.showSubtitleOverlay &&
             !uiState.showSubtitleStylePanel && !uiState.showSubtitleDelayOverlay &&
             !uiState.showSubtitleTimingDialog &&
@@ -663,15 +656,6 @@ fun PlayerScreen(
                         }
                         else -> true
                     }
-                }
-
-                if (shouldShowSourceControl(uiState, postPlayRecommendationState.isVisible) &&
-                    (uiState.showLoadingOverlay || uiState.isBuffering) &&
-                    keyEvent.nativeKeyEvent.keyCode in setOf(KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MENU)) {
-                    if (keyEvent.nativeKeyEvent.action == KeyEvent.ACTION_UP) {
-                        viewModel.onEvent(PlayerEvent.OnShowSourcesPanel)
-                    }
-                    return@onPreviewKeyEvent true
                 }
 
                 if (keyEvent.nativeKeyEvent.keyCode != KeyEvent.KEYCODE_CAPTIONS) {
@@ -1196,12 +1180,6 @@ fun PlayerScreen(
                 .zIndex(2f)
         )
 
-        if (shouldShowSourceControl(uiState, postPlayRecommendationState.isVisible)) {
-            PlayerSourceControl(uiState = uiState, focusRequester = currentSourceFocusRequester,
-                onChangeSource = { viewModel.onEvent(PlayerEvent.OnShowSourcesPanel) },
-                modifier = Modifier.align(Alignment.TopEnd).padding(28.dp).zIndex(2.8f))
-        }
-
         if (uiState.playbackIssueReportsEnabled &&
             uiState.showLoadingOverlay &&
             uiState.error == null &&
@@ -1290,7 +1268,7 @@ fun PlayerScreen(
         )
 
         // Error state
-        if (uiState.error != null && !uiState.showSourcesPanel) {
+        if (uiState.error != null) {
             ErrorOverlay(
                 message = uiState.error!!,
                 showSwitchToMpvAction = uiState.showSwitchToMpvErrorAction &&
@@ -1689,10 +1667,9 @@ fun PlayerScreen(
 
         // Sources panel scrim
         AnimatedVisibility(
-            visible = uiState.showSourcesPanel,
+            visible = uiState.showSourcesPanel && uiState.error == null,
             enter = fadeIn(animationSpec = tween(120)),
-            exit = fadeOut(animationSpec = tween(120)),
-            modifier = Modifier.zIndex(5f)
+            exit = fadeOut(animationSpec = tween(120))
 ) {
     Box(
         modifier = Modifier
@@ -1703,7 +1680,7 @@ fun PlayerScreen(
 
         // Sources panel (slides in from right)
         AnimatedVisibility(
-            visible = uiState.showSourcesPanel,
+            visible = uiState.showSourcesPanel && uiState.error == null,
             enter = slideInHorizontally(
                 animationSpec = tween(220),
                 initialOffsetX = { it }
@@ -1711,15 +1688,14 @@ fun PlayerScreen(
             exit = slideOutHorizontally(
                 animationSpec = tween(220),
                 targetOffsetX = { it }
-            ),
-            modifier = Modifier.zIndex(6f)
+            )
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 StreamSourcesSidePanel(
                     uiState = uiState,
                     streamsFocusRequester = sourceStreamsFocusRequester,
                     onClose = {
-                        if (!sourcePanelCanReturnToPlayer(uiState)) {
+                        if (uiState.currentStreamUrl.isNullOrBlank()) {
                             exitPlayer()
                         } else {
                             viewModel.onEvent(PlayerEvent.OnDismissSourcesPanel)
