@@ -196,6 +196,6 @@ object MoonCatSourcePolicy {
             Ranked(stream, if (preferredLanguage == null) 0 else languageTier(stream, preferredLanguage),
                 qualityTier(stream), releaseTier(stream), advertisedSeeders(stream))
         }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.quality }
-            .thenBy { it.release }.thenBy { if (it.stream.isTorrent()) 1 else 0 }
-            .thenByDescending { it.seeders }).map { it.stream }.toList()
+            .thenByDescending { it.seeders }.thenBy { it.release }
+            .thenBy { if (it.stream.isTorrent()) 1 else 0 }).map { it.stream }.toList()
 }

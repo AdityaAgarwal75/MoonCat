@@ -76,11 +76,11 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.suitable(link))
         assertTrue(MoonCatSourcePolicy.playbackCandidates(listOf(link)).isEmpty())
     }
-    @Test fun `equivalent verified HTTP can outrank seed counts without overriding Hindi preference`() {
+    @Test fun `availability beats transport without overriding Hindi preference`() {
         val hindiHttp = source("1080p Hindi WEB-DL", "https://cdn.example/movie")
         val hindiTorrent = source("1080p Hindi WEB-DL 👤 999")
         val englishHttp = source("1080p English WEB-DL", "https://cdn.example/english")
-        assertEquals(listOf(hindiHttp, hindiTorrent, englishHttp), MoonCatSourcePolicy.rank(
+        assertEquals(listOf(hindiTorrent, hindiHttp, englishHttp), MoonCatSourcePolicy.rank(
             listOf(englishHttp, hindiTorrent, hindiHttp), "hi"))
     }
     @Test fun `probe slots include free HTTP Hindi torrents and English fallbacks`() {
@@ -106,10 +106,10 @@ class MoonCatSourcePolicyTest {
             listOf(en, unknown, source("1080p French"), hi)))
     }
 
-    @Test fun `clean digital release outranks an unknown release at equal resolution`() {
+    @Test fun `availability outranks release branding at equal resolution`() {
         val clean = source("1080p WEB-DL Hindi 👤 100")
         val unknown = source("1080p Hindi 👤 900")
-        assertEquals(clean, MoonCatSourcePolicy.rank(listOf(unknown, clean)).first())
+        assertEquals(unknown, MoonCatSourcePolicy.rank(listOf(unknown, clean)).first())
     }
     @Test fun `provider branding does not misclassify an explicitly1080 release as4k`() {
         assertTrue(MoonCatSourcePolicy.suitable(source("4KHDHub 1080p Hindi WEB-DL 3 GB")))

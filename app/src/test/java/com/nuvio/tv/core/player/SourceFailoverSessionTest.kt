@@ -76,4 +76,14 @@ class SourceFailoverSessionTest {
         session.begin("movie", normalized, null, null, headers)
         assertTrue(session.candidates(listOf(source("Hindi 1080p", raw)), "hi").isEmpty())
     }
+    @Test fun `recovery tries most seeded remaining file within size cap`() {
+        val session = SourceFailoverSession()
+        session.begin("movie", null, "dead", 0, localTorrent = true)
+        val dead = source("Hindi 1080p 👤 9999").copy(infoHash = "dead", fileIdx = 0)
+        val popular = source("Hindi 1080p 1.3 GB 👤 5376").copy(infoHash = "popular")
+        val idealSize = source("Hindi 1080p 3.2 GB 👤 50").copy(infoHash = "size")
+        val huge = source("Hindi 1080p 20 GB 👤 99999").copy(infoHash = "huge")
+        assertEquals(listOf(popular, idealSize), session.candidates(listOf(idealSize, dead, huge, popular), "hi"))
+    }
+
 }
