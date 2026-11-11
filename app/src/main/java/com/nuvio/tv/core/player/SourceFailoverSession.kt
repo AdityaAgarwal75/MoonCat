@@ -29,7 +29,7 @@ class SourceFailoverSession(private val maxAttempts: Int = 4) {
     }
 
     fun candidates(streams: List<Stream>, language: String): List<Stream> =
-        MoonCatSourcePolicy.playbackCandidates(streams, language)
+        MoonCatSourcePolicy.instantOrder(streams, language)
             .filter { stream ->
                 (stream.getStreamUrl() != null || stream.getEffectiveInfoHash() != null ||
                     stream.serverTarget != null || stream.isYouTube() || stream.isDirectDebrid()) &&

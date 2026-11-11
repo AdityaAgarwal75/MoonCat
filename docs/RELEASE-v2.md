@@ -1,16 +1,10 @@
-# MoonCat 2.0.0-beta.16
+# MoonCat 2.0.0-beta.17
 
-Fire TV stability limits and Hindi-first playback, based on Beta 15.
+- Autoplay picks the highest advertised seeder count within the preferred audio and resolution tier. The old 3–3.5 GB size preference no longer beats a better seeded file. Retain the 4 GB cap and exclusion of 4K and camera releases.
+- Read counts from provider names, titles and descriptions, including comma-separated counts, emoji variation selectors and K/M abbreviations. Unlabelled numbers such as years, resolutions and file sizes are not seed counts.
+- Collect provider results for at most 300 ms after the first nonempty result, ending earlier on completed discovery. Start the chosen source through the normal player, without a speed-test or torrent race. Later provider responses may still arrive after selection.
+- Torrent playback starts at a one-second media buffer target, resumes after stalls with eight seconds, and tries to retain 60–90 seconds ahead subject to the existing device memory cap. Actual startup still depends on provider discovery, peers, metadata and decoding.
+- For a torrent that stops advancing its playable buffer for 20 seconds after its first frame, try the next candidate at the current playback position instead of seeking forward past buffered content. Never recover while paused. Recovery remains bounded to four alternative attempts.
+- Recovery uses the same popularity ranking and size limit as initial autoplay.
 
-- On devices with about 1 GB RAM, an app heap of 256 MB or less, or unknown RAM: disable parallel chunk downloading, experimental native performance mode, 4K autoplay and next-episode source preloading. Keep saved preferences intact; enforce managed buffering and disable the back buffer at runtime.
-- Keep constrained-device buffer limits in force even if Android advertises a large app heap, and keep the disabled back buffer disabled after the first frame.
-- Limit low-heap playback buffers to one fifth of the app heap, capped at 48 MB. This leaves more room for posters, playback decoders and navigation.
-- Validate saved buffer durations before constructing a player to prevent invalid duration combinations from failing initialization.
-- Give slower dubbed-source providers up to 2.5 seconds after the first result before falling back. Start immediately when preferred audio is advertised or discovery completes.
-- Prefer supported audio tracks using language tags or clear container labels, including Hindi when the tag is missing. Preserve manual and resumed audio choices. Subtitle labels never establish a dub.
-- Parse autoplay ranking keys once per candidate and reuse the language-label regex, reducing repeated string parsing during sorting. Offline replay of two real Torrentio lists and a 1,000-result stress case preserves the complete ranking for Hindi, English and Japanese.
-- Default new profiles to Hindi; existing language settings are retained, with normal source fallback when no dub is found.
-
-Signed in-place update: dev.mooncat.tv.v2, versionCode 20015. No uninstall required for compatible v2 installations.
-
-Validation: release automation runs the full TV unit suite, release-script tests, asset validation, optimized APK assembly, vital lint, and APK identity/signature checks. Regression tests cover constrained devices, malformed buffer preferences, delayed Hindi discovery and bounded fallback. These changes address verified code paths; they do not establish the cause of every reported crash. Physical Fire TV playback, navigation, network behavior and memory use still require device testing. Dub availability depends on provider results and supported audio in each file.
+Version code 20016; package and signing identity follow the existing v2 release pipeline. CI runs the TV unit suite, release-script tests, packaged-asset checks, optimized APK assembly and signature verification. Physical Fire TV startup and buffering remain to be measured; seeder counts do not establish sustained download speed.

@@ -18,8 +18,10 @@ object MoonCatSourcePolicy {
     private val ultraHd = Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""")
     private val cleanRelease = Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""")
     private val webRelease = Regex("""(?i)\b(?:web[ ._-]?rip|hdtv)\b""")
-    private val seederIcon = Regex("""(?:👤|👥|🌱)\s*(\d[\d,]*)""")
-    private val seederLabel = Regex("""(?i)\b(?:seeders?|seeds?)\s*[:=]?\s*(\d[\d,]*)""")
+    private const val COUNT = "(\\d[\\d,]*(?:\\.\\d+)?[kKmM]?)\\b"
+    private val seederIcon = Regex("(?:👤|👥|🌱)[\\uFE0F\\s]*$COUNT")
+    private val seederLabel = Regex("(?i)\\b(?:seeders?|seeds?)\\s*[:=]?\\s*$COUNT")
+    private val countBeforeLabel = Regex("(?i)$COUNT\\s+(?:seeders?|seeds?)\\b")
     private val sdResolution = Regex("""(?i)\b(?:576|540|480|360|240)p\b""")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
         stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename,
@@ -154,31 +156,32 @@ object MoonCatSourcePolicy {
     /** Seed counts are availability hints, never measured bandwidth. */
     fun advertisedSeeders(stream: Stream): Int {
         val content = text(stream)
-        val afterIcon = seederIcon.find(content)?.groupValues?.get(1)
-        val named = seederLabel.find(content)?.groupValues?.get(1)
-        return (afterIcon ?: named)?.replace(",", "")?.toIntOrNull() ?: 0
+        return sequenceOf(seederIcon, seederLabel, countBeforeLabel)
+            .flatMap { it.findAll(content) }
+            .mapNotNull { match ->
+                val count = match.groupValues[1].replace(",", "").trim().lowercase()
+                val multiplier = when (count.lastOrNull()) { 'k' -> 1_000.0; 'm' -> 1_000_000.0; else -> 1.0 }
+                count.trimEnd('k', 'm').trim().toDoubleOrNull()?.let {
+                    (it * multiplier).coerceIn(0.0, Int.MAX_VALUE.toDouble()).toInt()
+                }
+            }.maxOrNull() ?: 0
     }
 
     private data class InstantRank(
         val stream: Stream, val language: Int, val quality: Int,
-        val sizeTier: Int, val seeders: Int, val release: Int, val size: Long
+        val seeders: Int, val release: Int, val size: Long
     )
 
-    /** Parse each candidate once, rather than again on every sort comparison. */
+    /** Highest advertised availability wins within the preferred audio/resolution tier.
+     * File size is only a tie breaker, never a reason to reject a better seeded file.
+     */
     fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
         streams.asSequence().filter { suitable(it, USER_MAX_FILE_BYTES) && !it.isExternal() }
             .map { stream ->
-                val size = sizeBytes(stream)
                 InstantRank(stream, languageTier(stream, language), qualityTier(stream),
-                    when {
-                        size == null -> 3
-                        size in 3_000_000_000L..3_500_000_000L -> 0
-                        size in 2_500_000_000L..USER_MAX_FILE_BYTES -> 1
-                        else -> 2
-                    }, advertisedSeeders(stream), releaseTier(stream), size ?: -1L)
+                    advertisedSeeders(stream), releaseTier(stream), sizeBytes(stream) ?: Long.MAX_VALUE)
             }.sortedWith(compareBy<InstantRank> { it.language }.thenBy { it.quality }
-                .thenBy { it.sizeTier }.thenByDescending { it.seeders }
-                .thenBy { it.release }.thenByDescending { it.size })
+                .thenByDescending { it.seeders }.thenBy { it.release }.thenBy { it.size })
             .map { it.stream }.toList()
 
     /** Include well-seeded options early in the readiness race across resolutions. */

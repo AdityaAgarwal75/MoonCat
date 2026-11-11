@@ -85,15 +85,15 @@ class PlaybackSourceSessionTest {
         assertTrue(hd in batch)
     }
 
-    @Test fun `metadata autoplay waits for a slower Hindi provider`() = runTest {
+    @Test fun `metadata autoplay collects a slower provider within the short window`() = runTest {
         val english = source("1080p English", "https://cdn.example/en")
         val hindi = source("720p Hindi", "https://cdn.example/hi")
         val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(english)))
         val choice = async { PlaybackSourceSession().selectMetadata(states, "hi") }
         runCurrent()
         assertFalse(choice.isCompleted)
-        advanceTimeBy(1_000)
-        states.value = PlaybackSourceSession.Snapshot(listOf(english, hindi))
+        advanceTimeBy(200)
+        states.value = PlaybackSourceSession.Snapshot(listOf(english, hindi), true)
         runCurrent()
         assertEquals(hindi, choice.await())
     }
@@ -103,19 +103,33 @@ class PlaybackSourceSessionTest {
         val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(english)))
         val choice = async { PlaybackSourceSession().selectMetadata(states, "hi") }
         runCurrent()
-        advanceTimeBy(2_500)
+        advanceTimeBy(300)
         runCurrent()
         assertEquals(english, choice.await())
     }
 
-    @Test fun `completed discovery and preferred results never add a grace delay`() = runTest {
+    @Test fun `completed discovery never adds a grace delay`() = runTest {
         val hindi = source("1080p Hindi", "https://cdn.example/hi")
         val before = testScheduler.currentTime
         assertEquals(hindi, PlaybackSourceSession().selectMetadata(
-            MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(hindi))), "hi"))
+            MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(hindi), true)), "hi"))
         assertEquals(before, testScheduler.currentTime)
         assertNull(PlaybackSourceSession().selectMetadata(
             MutableStateFlow(PlaybackSourceSession.Snapshot(complete = true)), "hi"))
+    }
+
+    @Test fun `later popular source replaces early weak source before metadata commits`() = runTest {
+        val weak = source("Hindi 1080p 3.2 GB 👤 10").copy(infoHash = "weak")
+        val popular = source("Hindi 1080p 1.3 GB 👤 5376").copy(infoHash = "popular")
+        val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(weak)))
+        val choice = async { PlaybackSourceSession().selectMetadata(states, "hi") }
+        runCurrent()
+        advanceTimeBy(200)
+        states.value = PlaybackSourceSession.Snapshot(listOf(weak, popular))
+        advanceTimeBy(100)
+        runCurrent()
+        assertEquals(popular, choice.await())
+        assertEquals(300L, testScheduler.currentTime)
     }
 
 }

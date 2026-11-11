@@ -11,7 +11,7 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
-    @Test fun `instant order favours seeded three gigabyte 1080p releases`() {
+    @Test fun `instant order favours highest availability over the old three gigabyte preference`() {
         val small = source("Hindi 1080p WEB-DL 900 MB 👤 800").copy(infoHash = "small")
         val middle = source("Hindi 1080p WEB-DL 2 GB 👤 20").copy(infoHash = "middle")
         val ideal = source("Hindi 1080p WEB-DL 3.2 GB 👤 100").copy(infoHash = "ideal")
@@ -19,8 +19,27 @@ class MoonCatSourcePolicyTest {
         val large = source("Hindi 1080p WEB-DL 3.8 GB 👤 1000").copy(infoHash = "large")
         val english = source("English 1080p WEB-DL 2 GB").copy(infoHash = "english")
         val fourK = source("Hindi 2160p 2 GB").copy(infoHash = "fourk")
-        assertEquals(listOf(idealPopular, ideal, large, small, middle, english), MoonCatSourcePolicy.instantOrder(
+        assertEquals(listOf(large, small, idealPopular, ideal, middle, english), MoonCatSourcePolicy.instantOrder(
             listOf(english, large, ideal, fourK, small, idealPopular, middle), "hi"))
+    }
+    @Test fun `5376 seed source wins even when another file has ideal size and cleaner release`() {
+        val popular = source("Torrentio 1080p").copy(title = "Movie English 1.3 GB 👤 5,376", infoHash = "popular")
+        val oldFavourite = source("English 1080p WEB-DL 3.2 GB 👤 200").copy(infoHash = "old")
+        assertEquals(popular, MoonCatSourcePolicy.instantOrder(listOf(oldFavourite, popular), "en").first())
+    }
+    @Test fun `counts in names titles and descriptions accept addon formats without using years or sizes`() {
+        assertEquals(5376, MoonCatSourcePolicy.advertisedSeeders(source("1080p 👤 5376")))
+        assertEquals(5376, MoonCatSourcePolicy.advertisedSeeders(source("Torrentio").copy(title = "👤️ 5,376")))
+        assertEquals(5400, MoonCatSourcePolicy.advertisedSeeders(source("Torrentio").copy(description = "Seeders: 5.4K")))
+        assertEquals(5376, MoonCatSourcePolicy.advertisedSeeders(source("5376 seeds")))
+        assertEquals(0, MoonCatSourcePolicy.advertisedSeeders(source("Film 2026 1080p 3.2 GB")))
+        assertEquals(0, MoonCatSourcePolicy.advertisedSeeders(source("seeds: unknown")))
+    }
+    @Test fun `high availability cannot bypass resolution size release and audio preferences`() {
+        val valid = source("Hindi 1080p 1.2 GB 👤 5")
+        val unsafe = listOf(source("Hindi 2160p 3 GB 👤 9999"), source("Hindi 1080p 5 GB 👤 9999"),
+            source("Hindi 1080p CAM 2 GB 👤 9999"), source("English 1080p 2 GB 👤 9999"))
+        assertEquals(listOf(valid, unsafe.last()), MoonCatSourcePolicy.instantOrder(unsafe + valid, "hi"))
     }
     @Test fun `other known sizes remain fallbacks before unknown sizes`() {
         val unknown = source("Hindi 1080p 3.9 GB 👤 500").copy(infoHash = "unknown")

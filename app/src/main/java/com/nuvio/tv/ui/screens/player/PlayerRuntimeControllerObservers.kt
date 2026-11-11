@@ -787,7 +787,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
 
     stallWatchdogJob = scope.launch {
         var lastBufferedPosition = player.bufferedPosition
-        var lastAdvanceAtMs = System.currentTimeMillis()
+        var lastAdvanceAtMs = android.os.SystemClock.elapsedRealtime()
 
         while (isActive) {
             delay(PlayerRuntimeController.STALL_WATCHDOG_POLL_INTERVAL_MS)
@@ -797,7 +797,7 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
                 return@launch
             }
 
-            val nowMs = System.currentTimeMillis()
+            val nowMs = android.os.SystemClock.elapsedRealtime()
             val bufferedNow = livePlayer.bufferedPosition
             if (bufferedNow > lastBufferedPosition) {
                 // Real progress — reset the stall timer.
@@ -807,6 +807,19 @@ internal fun PlayerRuntimeController.maybeScheduleStallWatchdog() {
             }
 
             val stalledForMs = nowMs - lastAdvanceAtMs
+            if (_uiState.value.isTorrentStream) {
+                // Seeking past the buffer discards useful torrent pieces and skips content.
+                // A prolonged post-start stall tries the next source at the current position.
+                if (com.nuvio.tv.core.mooncat.TorrentPlaybackBufferPolicy.shouldRecover(
+                        stalledForMs, hasRenderedFirstFrame, livePlayer.playWhenReady)) {
+                    if (!tryAlternativeSource("Torrent stopped delivering playable data")) {
+                        _uiState.update { it.copy(error = "Source stalled. Choose another source.",
+                            isBuffering = false, showLoadingOverlay = false) }
+                    }
+                    return@launch
+                }
+                continue
+            }
             when (
                 val decision = PlayerStallWatchdogPolicy.evaluate(
                     PlayerStallWatchdogPolicy.Input(

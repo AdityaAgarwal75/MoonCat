@@ -465,7 +465,10 @@ internal fun PlayerRuntimeController.initializePlayer(
             // lowmemorykiller spiral, so for confirmed DV7 on low-RAM we drop the back buffer
             // and shrink the budget at first frame (below).
             val libdoviConversionActive = effectiveDv7Mode == Dv7HandlingMode.DV81_LIBDOVI
-            NuvioExoPlayerPerformanceHelper.updateSettings(playerSettings, context)
+            val playbackBuffers = if (_uiState.value.isTorrentStream) {
+                com.nuvio.tv.core.mooncat.TorrentPlaybackBufferPolicy.apply(playerSettings.bufferSettings)
+            } else playerSettings.bufferSettings
+            NuvioExoPlayerPerformanceHelper.updateSettings(playerSettings.copy(bufferSettings = playbackBuffers), context)
             NuvioExoPlayerPerformanceHelper.enabled = playerSettings.nuvioPerformanceModeEnabled
             val streamMime = currentStreamMimeType
             val isHls = streamMime != null && (
@@ -517,7 +520,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 )
                 NuvioExoPlayerPerformanceHelper.buildLoadControl(context, parallelOverheadMb)
             } else if (playerSettings.bufferEngineEnabled) {
-                val bufferSettings = playerSettings.bufferSettings
+                val bufferSettings = playbackBuffers
                 // Managed (default) caps the buffer at the device budget; off uses Target Buffer Size.
                 // Stay full here even on a DV display; first frame tightens only for confirmed DV7.
                 val budgetManaged = playerSettings.bufferBudgetManaged
@@ -575,7 +578,8 @@ internal fun PlayerRuntimeController.initializePlayer(
                             "(backBufferMs=$effectiveBackBufferDurationMs, budgetMb=$managedPlaybackBudgetMb, no VOD cache) host=${url.safeHost()}"
                 )
                 DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(30_000, 90_000, 2_500, 8_000)
+                    .setBufferDurationsMs(playbackBuffers.minBufferMs, playbackBuffers.maxBufferMs,
+                        playbackBuffers.bufferForPlaybackMs, playbackBuffers.bufferForPlaybackAfterRebufferMs)
                     .setTargetBufferBytes(managedPlaybackBudgetMb * 1024 * 1024)
                     .setPrioritizeTimeOverSizeThresholds(false)
                     .setBackBuffer(effectiveBackBufferDurationMs, /* retainBackBufferFromKeyframe = */ true)

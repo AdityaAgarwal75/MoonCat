@@ -17,14 +17,14 @@ class PlaybackSourceSession(
 ) {
     data class Snapshot(val candidates: List<Stream> = emptyList(), val complete: Boolean = false)
 
-    /** Give slower dub providers a bounded chance before committing to the first fallback. */
+    /** Briefly collect competing provider results; never run bandwidth/preload races here.
+     * Selection uses the latest snapshot so a later popular source beats an early weak one.
+     */
     suspend fun selectMetadata(snapshots: StateFlow<Snapshot>, language: String): Stream? {
         val first = snapshots.first { it.candidates.isNotEmpty() || it.complete }
         if (first.candidates.isEmpty()) return null
-        withTimeoutOrNull(2_500L) {
-            snapshots.first { it.complete || it.candidates.any { stream ->
-                MoonCatSourcePolicy.languageTier(stream, language) == 0
-            } }
+        if (!first.complete) {
+            withTimeoutOrNull(languageGraceMs) { snapshots.first { it.complete } }
         }
         return MoonCatSourcePolicy.instantOrder(snapshots.value.candidates, language).firstOrNull()
     }
