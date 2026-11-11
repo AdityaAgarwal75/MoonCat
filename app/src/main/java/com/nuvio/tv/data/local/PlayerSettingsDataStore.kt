@@ -894,7 +894,7 @@ class PlayerSettingsDataStore @Inject constructor(
                 persistAudioAmplification = prefs[persistAudioAmplificationKey] ?: false,
                 rememberAudioDelayPerDevice = prefs[rememberAudioDelayPerDeviceKey] ?: true,
                 preferredAudioLanguage = normalizeSelectableLanguageCode(
-                    prefs[preferredAudioLanguageKey] ?: if (profileManager.activeProfileId.value == 1) "hi" else "en"
+                    prefs[preferredAudioLanguageKey] ?: "hi"
                 ),
                 secondaryPreferredAudioLanguage = prefs[secondaryPreferredAudioLanguageKey]
                     ?.let(::normalizeSecondaryAudioLanguageCode) ?: "en",
@@ -1050,6 +1050,13 @@ class PlayerSettingsDataStore @Inject constructor(
         } catch (e: ClassCastException) {
             Log.w("PlayerSettingsDataStore", "Corrupt preference value, using defaults", e)
             PlayerSettings()
+        }
+        .let { settings ->
+            com.nuvio.tv.core.mooncat.FireTvPlaybackPolicy.apply(
+                settings,
+                com.nuvio.tv.ui.screens.player.NuvioExoPlayerPerformanceHelper.getDevicePhysicalRamBytes(context),
+                Runtime.getRuntime().maxMemory()
+            )
         }
         }
 

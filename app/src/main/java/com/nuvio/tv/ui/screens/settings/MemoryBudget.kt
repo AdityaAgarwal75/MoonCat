@@ -72,6 +72,7 @@ object MemoryBudget {
     val budgetMb: Int =
         if (isLowRamTier)
             rawBudgetMb.coerceAtMost((maxHeapMb - LOW_HEAP_RESERVE_MB).toInt()).coerceAtLeast(minPlaybackBudgetMb)
+                .coerceAtMost(com.nuvio.tv.core.mooncat.FireTvPlaybackPolicy.heapBufferMb(maxHeapMb * 1024 * 1024))
         else rawBudgetMb
 
     val conversionBudgetMb: Int =

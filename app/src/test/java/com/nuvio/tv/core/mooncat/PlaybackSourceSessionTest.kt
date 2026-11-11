@@ -85,4 +85,37 @@ class PlaybackSourceSessionTest {
         assertTrue(hd in batch)
     }
 
+    @Test fun `metadata autoplay waits for a slower Hindi provider`() = runTest {
+        val english = source("1080p English", "https://cdn.example/en")
+        val hindi = source("720p Hindi", "https://cdn.example/hi")
+        val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(english)))
+        val choice = async { PlaybackSourceSession().selectMetadata(states, "hi") }
+        runCurrent()
+        assertFalse(choice.isCompleted)
+        advanceTimeBy(1_000)
+        states.value = PlaybackSourceSession.Snapshot(listOf(english, hindi))
+        runCurrent()
+        assertEquals(hindi, choice.await())
+    }
+
+    @Test fun `metadata fallback is bounded when no dub is advertised`() = runTest {
+        val english = source("1080p English", "https://cdn.example/en")
+        val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(english)))
+        val choice = async { PlaybackSourceSession().selectMetadata(states, "hi") }
+        runCurrent()
+        advanceTimeBy(2_500)
+        runCurrent()
+        assertEquals(english, choice.await())
+    }
+
+    @Test fun `completed discovery and preferred results never add a grace delay`() = runTest {
+        val hindi = source("1080p Hindi", "https://cdn.example/hi")
+        val before = testScheduler.currentTime
+        assertEquals(hindi, PlaybackSourceSession().selectMetadata(
+            MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(hindi))), "hi"))
+        assertEquals(before, testScheduler.currentTime)
+        assertNull(PlaybackSourceSession().selectMetadata(
+            MutableStateFlow(PlaybackSourceSession.Snapshot(complete = true)), "hi"))
+    }
+
 }

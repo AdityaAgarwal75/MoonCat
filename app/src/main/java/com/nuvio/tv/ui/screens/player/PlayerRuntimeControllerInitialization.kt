@@ -525,7 +525,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 // Build with the user's back buffer so seek-back works immediately, except on a heap
                 // bound device, where the load control would hold it for the whole session.
                 configuredBackBufferMs = bufferSettings.backBufferDurationMs
-                val backBufferMsAtBuild = if (libdoviConversionActive && MemoryBudget.isLowRamTier) {
+                val backBufferMsAtBuild = if (MemoryBudget.isLowRamTier) {
                     0
                 } else {
                     configuredBackBufferMs
@@ -564,7 +564,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 ).also { currentBitrateAwareLoadControl = it }
             } else {
                 // Stock LoadControl: DefaultLoadControl configured with 1.5s back buffer so 1s rewind doesn't clear buffer.
-                effectiveBackBufferDurationMs = 1_500
+                effectiveBackBufferDurationMs = if (MemoryBudget.isLowRamTier) 0 else 1_500
                 currentBitrateAwareLoadControl = null
                 Log.i(
                     PlayerRuntimeController.TAG,
@@ -575,7 +575,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                     .setBufferDurationsMs(30_000, 90_000, 2_500, 8_000)
                     .setTargetBufferBytes(MemoryBudget.budgetMb * 1024 * 1024)
                     .setPrioritizeTimeOverSizeThresholds(false)
-                    .setBackBuffer(1_500, /* retainBackBufferFromKeyframe = */ true)
+                    .setBackBuffer(effectiveBackBufferDurationMs, /* retainBackBufferFromKeyframe = */ true)
                     .build()
             }
             _loadControl = loadControl

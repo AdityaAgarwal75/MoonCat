@@ -603,8 +603,9 @@ class StreamScreenViewModel @Inject constructor(
                     sourceSelectionJob = launch {
                         // Start the top metadata candidate through the normal player immediately.
                         // The player performs actual torrent setup and retains failure recovery.
-                        val selected = selectionSnapshots.first { it.candidates.isNotEmpty() || it.complete }
-                            .candidates.firstOrNull()
+                        val selected = com.nuvio.tv.core.mooncat.PlaybackSourceSession().selectMetadata(
+                            selectionSnapshots, playerSettings.preferredAudioLanguage
+                        )
                         ensureActive()
                         if (selected != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {
                             resolvedAutoPlayTarget = true

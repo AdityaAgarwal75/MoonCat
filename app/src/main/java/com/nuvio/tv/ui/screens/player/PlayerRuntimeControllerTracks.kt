@@ -302,6 +302,18 @@ internal fun PlayerRuntimeController.updateAvailableTracks(tracks: Tracks) {
         )
     }
     updateAudioControlAvailability(audioTracks, selectedAudioIndex)
+    // Container labels such as "Hindi" still work when the language tag is missing.
+    // A deliberate audio choice, including one restored on resume, always wins.
+    if (rememberedTrackPreference?.audio == null && persistedTrackPreference?.audio == null &&
+        pendingEngineSwitchTrackPreference?.preference?.audio == null && requestedAudioLanguageForPlayback == null) {
+        val preferred = mpvPreferredAudioLanguages.firstNotNullOfOrNull { language ->
+            com.nuvio.tv.domain.playback.AudioLanguagePolicy.matching(
+                audioTracks.map(TrackInfo::toAudioCandidate), language
+            ).firstOrNull()
+        }
+        if (preferred != null && !preferred.selected) selectAudioTrack(preferred.key)
+    }
+
     logSwitchTrace(
         stage = "exo-tracks-update-end",
         message = "audioCount=${audioTracks.size} subtitleCount=${subtitleTracks.size} " +
