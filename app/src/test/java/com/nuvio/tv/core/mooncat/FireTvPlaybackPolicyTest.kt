@@ -47,4 +47,11 @@ class FireTvPlaybackPolicyTest {
             nuvioPerformanceModeEnabled = true, bufferBudgetManaged = false, allowLargeTargetBuffer = true)
         assertEquals(saved, FireTvPlaybackPolicy.apply(saved, 4_000 * mb, 1_024 * mb))
     }
+    @Test fun `large app heap cannot bypass one GB physical device budget`() {
+        assertEquals(48, FireTvPlaybackPolicy.managedBudgetMb(900 * mb, 1_024 * mb, 870))
+        assertEquals(870, FireTvPlaybackPolicy.managedBudgetMb(4_000 * mb, 1_024 * mb, 870))
+        assertEquals(25, FireTvPlaybackPolicy.managedBudgetMb(900 * mb, 128 * mb, 100))
+        assertEquals(20, FireTvPlaybackPolicy.managedBudgetMb(900 * mb, 256 * mb, 20))
+    }
+
 }

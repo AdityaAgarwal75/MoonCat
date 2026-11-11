@@ -501,6 +501,12 @@ internal fun PlayerRuntimeController.initializePlayer(
                 0
             }
             currentParallelChunkOverheadMb = parallelOverheadMb
+            val physicalRamBytes = NuvioExoPlayerPerformanceHelper.getDevicePhysicalRamBytes(context)
+            val heapBytes = Runtime.getRuntime().maxMemory()
+            val constrainedDevice = com.nuvio.tv.core.mooncat.FireTvPlaybackPolicy.constrained(physicalRamBytes, heapBytes)
+            val managedPlaybackBudgetMb = com.nuvio.tv.core.mooncat.FireTvPlaybackPolicy.managedBudgetMb(
+                physicalRamBytes, heapBytes, MemoryBudget.budgetMb
+            )
 
             val loadControl = if (playerSettings.nuvioPerformanceModeEnabled) {
                 effectiveBackBufferDurationMs = NuvioExoPlayerPerformanceHelper.backBufferMs
@@ -516,7 +522,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 // Stay full here even on a DV display; first frame tightens only for confirmed DV7.
                 val budgetManaged = playerSettings.bufferBudgetManaged
                 val budgetMbEffective = if (budgetManaged) {
-                    (MemoryBudget.budgetMb - parallelOverheadMb).coerceAtLeast(MemoryBudget.MIN_BUFFER_MB)
+                    (managedPlaybackBudgetMb - parallelOverheadMb).coerceAtLeast(MemoryBudget.MIN_BUFFER_MB)
                 } else {
                     (MemoryBudget.effectiveBufferMb(bufferSettings.targetBufferSizeMb) - parallelOverheadMb)
                         .coerceAtLeast(MemoryBudget.MIN_BUFFER_MB)
@@ -524,12 +530,9 @@ internal fun PlayerRuntimeController.initializePlayer(
                 val budgetBytes = budgetMbEffective.toLong() * 1024L * 1024L
                 // Build with the user's back buffer so seek-back works immediately, except on a heap
                 // bound device, where the load control would hold it for the whole session.
-                configuredBackBufferMs = bufferSettings.backBufferDurationMs
-                val backBufferMsAtBuild = if (MemoryBudget.isLowRamTier) {
-                    0
-                } else {
-                    configuredBackBufferMs
-                }
+                configuredBackBufferMs = if (constrainedDevice || MemoryBudget.isLowRamTier) 0
+                    else bufferSettings.backBufferDurationMs
+                val backBufferMsAtBuild = configuredBackBufferMs
                 Log.i(
                     PlayerRuntimeController.TAG,
                     "BUFFER_GATE: engine=exo-custom master=on " +
@@ -538,7 +541,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                             "dv7conv=$libdoviConversionActive " +
                             "managed=$budgetManaged " +
                             "parallelOverheadMb=$parallelOverheadMb " +
-                            "backBufferMsAtBuild=$backBufferMsAtBuild (set=$configuredBackBufferMs, lowered to 0 only for real DV7) " +
+                            "backBufferMsAtBuild=$backBufferMsAtBuild (set=$configuredBackBufferMs, device limit applied) " +
                             "budgetMb=$budgetMbEffective host=${url.safeHost()}"
                 )
                 effectiveBackBufferDurationMs = backBufferMsAtBuild
@@ -563,17 +566,17 @@ internal fun PlayerRuntimeController.initializePlayer(
                     allocator = allocator
                 ).also { currentBitrateAwareLoadControl = it }
             } else {
-                // Stock LoadControl: DefaultLoadControl configured with 1.5s back buffer so 1s rewind doesn't clear buffer.
-                effectiveBackBufferDurationMs = if (MemoryBudget.isLowRamTier) 0 else 1_500
+                // Small devices reserve memory for decoding/UI rather than retaining old frames.
+                effectiveBackBufferDurationMs = if (constrainedDevice || MemoryBudget.isLowRamTier) 0 else 1_500
                 currentBitrateAwareLoadControl = null
                 Log.i(
                     PlayerRuntimeController.TAG,
                     "BUFFER_GATE: engine=exo-stock master=off; DefaultLoadControl " +
-                            "(1.5s back buffer, no VOD cache) host=${url.safeHost()}"
+                            "(backBufferMs=$effectiveBackBufferDurationMs, budgetMb=$managedPlaybackBudgetMb, no VOD cache) host=${url.safeHost()}"
                 )
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(30_000, 90_000, 2_500, 8_000)
-                    .setTargetBufferBytes(MemoryBudget.budgetMb * 1024 * 1024)
+                    .setTargetBufferBytes(managedPlaybackBudgetMb * 1024 * 1024)
                     .setPrioritizeTimeOverSizeThresholds(false)
                     .setBackBuffer(effectiveBackBufferDurationMs, /* retainBackBufferFromKeyframe = */ true)
                     .build()

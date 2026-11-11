@@ -13,13 +13,7 @@ concurrency:
   group: mooncat-tv-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  hold-beta16:
-    if: github.ref == 'refs/heads/fix/fire-tv-beta16'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo 'Beta 16 APK builds are paused while source-selection work is finalized.'
   tv:
-    if: github.ref != 'refs/heads/fix/fire-tv-beta16'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

@@ -29,6 +29,11 @@ object FireTvPlaybackPolicy {
         )
     }
 
+    /** A large advertised app heap must not bypass a small physical-RAM limit. */
+    fun managedBudgetMb(totalRamBytes: Long, maxHeapBytes: Long, defaultBudgetMb: Int): Int =
+        if (constrained(totalRamBytes, maxHeapBytes)) defaultBudgetMb.coerceAtMost(heapBufferMb(maxHeapBytes))
+        else defaultBudgetMb
+
     fun heapBufferMb(maxHeapBytes: Long): Int =
         (maxHeapBytes / (1024 * 1024) / 5).toInt().coerceIn(16, 48)
 }
