@@ -21,6 +21,7 @@ object AudioLanguagePolicy {
     private val isoAliases = isoLanguages.mapNotNull { code ->
         runCatching { Locale.forLanguageTag(code).isO3Language to code }.getOrNull()
     }.toMap()
+    private val bracketedLanguages = Regex("""\[([^\]]+)\]""")
     private val labelTokens = Regex("[a-z]{2,}")
     private val subtitleSuffix = Regex("""(?i)\b(?:subtitles?|subs?|subbed|srt)\s*[:=]?\s+[^\n|;]+""")
     private val subtitlePrefix = Regex("""(?i)\b([a-z]+)\s+(?:subtitles?|subs?|subbed)\b""")
@@ -50,7 +51,7 @@ object AudioLanguagePolicy {
             // Two-letter words in a release title are too ambiguous to be language evidence.
             aliases[token.value] ?: isoAliases[token.value]
         }.toSet()
-        val declared = Regex("""\[([^\]]+)\]""").findAll(audioText).flatMap { bracket ->
+        val declared = bracketedLanguages.findAll(audioText).flatMap { bracket ->
             labelTokens.findAll(bracket.groupValues[1].lowercase(Locale.ROOT)).mapNotNull { normalize(it.value) }
         }.toSet()
         return named + declared

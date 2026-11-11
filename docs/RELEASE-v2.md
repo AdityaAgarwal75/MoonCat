@@ -7,6 +7,7 @@ Fire TV stability limits and Hindi-first playback, based on Beta 15.
 - Validate saved buffer durations before constructing a player to prevent invalid duration combinations from failing initialization.
 - Give slower dubbed-source providers up to 2.5 seconds after the first result before falling back. Start immediately when preferred audio is advertised or discovery completes.
 - Prefer supported audio tracks using language tags or clear container labels, including Hindi when the tag is missing. Preserve manual and resumed audio choices. Subtitle labels never establish a dub.
+- Parse autoplay ranking keys once per candidate and reuse the language-label regex, reducing repeated string parsing during sorting. Offline replay of two real Torrentio lists and a 1,000-result stress case preserves the complete ranking for Hindi, English and Japanese.
 - Default new profiles to Hindi; existing language settings are retained, with normal source fallback when no dub is found.
 
 Signed in-place update: dev.mooncat.tv.v2, versionCode 20015. No uninstall required for compatible v2 installations.
