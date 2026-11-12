@@ -11,6 +11,20 @@ internal fun source(name: String, url: String? = null) = Stream(
 )
 
 class MoonCatSourcePolicyTest {
+    @Test fun `seeder counts and file sizes cannot promote resolution`() {
+        val hd = source("Hindi 1080p 900 MB seeds: 50").copy(infoHash = "hd")
+        val sd = source("Hindi 480p 1080 MB seeds: 1080").copy(infoHash = "sd", qualityValue = 480)
+        val unknown = source("Hindi 720 MB seeds: 1080").copy(infoHash = "unknown")
+        assertEquals(2, MoonCatSourcePolicy.qualityTier(sd))
+        assertEquals(3, MoonCatSourcePolicy.qualityTier(unknown))
+        assertEquals(listOf(hd, sd, unknown), MoonCatSourcePolicy.instantOrder(listOf(sd, unknown, hd), "hi"))
+    }
+
+    @Test fun `dimension labels retain HD resolution without a p suffix`() {
+        assertEquals(0, MoonCatSourcePolicy.qualityTier(source("Hindi 1920x1080")))
+        assertEquals(1, MoonCatSourcePolicy.qualityTier(source("Hindi 1280x720")))
+    }
+
     @Test fun `instant order favours highest availability over the old three gigabyte preference`() {
         val small = source("Hindi 1080p WEB-DL 900 MB 👤 800").copy(infoHash = "small")
         val middle = source("Hindi 1080p WEB-DL 2 GB 👤 20").copy(infoHash = "middle")

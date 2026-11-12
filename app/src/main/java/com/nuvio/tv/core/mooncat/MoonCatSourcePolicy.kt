@@ -23,6 +23,8 @@ object MoonCatSourcePolicy {
     private val seederLabel = Regex("(?i)\\b(?:seeders?|seeds?)\\s*[:=]?\\s*$COUNT")
     private val countBeforeLabel = Regex("(?i)$COUNT\\s+(?:seeders?|seeds?)\\b")
     private val sdResolution = Regex("""(?i)\b(?:576|540|480|360|240)p\b""")
+    private val fullHdResolution = Regex("""(?i)(\b1080p\b|\b1920x1080\b)""")
+    private val hdResolution = Regex("""(?i)(\b720p\b|\b1280x720\b)""")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
         stream.quality, stream.behaviorHints?.filename, stream.clientResolve?.filename,
         stream.clientResolve?.stream?.raw?.torrentName, stream.clientResolve?.stream?.raw?.filename,
@@ -113,8 +115,8 @@ object MoonCatSourcePolicy {
         val description = text(stream)
         return when {
             is4k(stream) -> -1
-            stream.qualityValue == 1080 || description.contains("1080", true) -> 0
-            stream.qualityValue == 720 || description.contains("720", true) -> 1
+            stream.qualityValue == 1080 || fullHdResolution.containsMatchIn(description) -> 0
+            stream.qualityValue == 720 || hdResolution.containsMatchIn(description) -> 1
             stream.qualityValue in 1..719 || sdResolution.containsMatchIn(description) -> 2
             else -> 3
         }
