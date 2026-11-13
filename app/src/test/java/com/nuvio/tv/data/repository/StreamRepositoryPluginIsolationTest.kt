@@ -174,7 +174,7 @@ class StreamRepositoryPluginIsolationTest {
             StreamResponseDto(
                 streams = listOf(
                     StreamDto(
-                        name = "Fast Stream",
+                        name = "Fast Stream 1080p 2 GB",
                         url = "https://stream.example/video.m3u8"
                     )
                 )
