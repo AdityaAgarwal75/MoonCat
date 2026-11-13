@@ -1,0 +1,74 @@
+name: Publish MoonCat V3 signed update
+on:
+  push:
+    branches: [redesign/mooncat-v3]
+    paths:
+      - '.github/workflows/publish-mooncat-v3.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERIFIED_RUN_ID: '43436989142'
+      VERIFIED_COMMIT: '09d588abd4d4eee79677d928e8901e88face0d72'
+      RELEASE_TAG: 'v3.0.0-alpha.1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm verified V3 build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${VERIFIED_RUN_ID}")"
+          echo "$RUN_JSON" | python3 -c '
+          import json,sys,os
+          run=json.load(sys.stdin)
+          assert run["conclusion"] == "success", "Original V3 build did not pass"
+          assert run["head_branch"] == "redesign/mooncat-v3", "Unexpected branch"
+          assert run["head_sha"] == os.environ["VERIFIED_COMMIT"], "Unexpected build commit"
+          '
+      - name: Download successfully validated APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$VERIFIED_RUN_ID" -n MoonCat-TV-validation-70 -D validated
+          find validated -type f -name '*.apk' -print
+      - name: Verify release is a genuine in-place V2 update
+        shell: bash
+        env:
+          TRUSTED_CERT_SHA256: ${{ secrets.MOONCAT_V2_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          [[ "$TRUSTED_CERT_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "Trusted signing identity not configured"; exit 1; }
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          "$SDKMANAGER" 'build-tools;36.0.0'
+          TOOL="$ANDROID_HOME/build-tools/36.0.0"
+          APK="$(find validated -type f -name 'MoonCat-v3.0.0-alpha.1-FireTV.apk' -print -quit)"
+          SUMS="$(find validated -type f -name 'SHA256SUMS' -print -quit)"
+          test -n "$APK" && test -f "$APK"
+          test -n "$SUMS" && test -f "$SUMS"
+          (cd "$(dirname "$SUMS")" && sha256sum -c SHA256SUMS)
+          "$TOOL/apksigner" verify --verbose "$APK"
+          "$TOOL/apksigner" verify --print-certs "$APK" | grep -F "Signer #1 certificate SHA-256 digest: $TRUSTED_CERT_SHA256"
+          "$TOOL/aapt" dump badging "$APK" | grep -F "package: name='dev.mooncat.tv.v2' versionCode='30000' versionName='3.0.0-alpha.1'"
+          echo "Verified V3 APK retains package identity and existing trusted signing certificate."
+          echo "APK=$APK" >> "$GITHUB_ENV"
+          echo "SUMS=$SUMS" >> "$GITHUB_ENV"
+      - name: Publish signed V3 pre-release update
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; will not overwrite."
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" "$APK" "$SUMS" \
+            --target "$VERIFIED_COMMIT" \
+            --title "MoonCat 3.0.0-alpha.1" \
+            --notes-file docs/RELEASE-v3.md \
+            --prerelease
