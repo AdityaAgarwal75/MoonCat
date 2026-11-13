@@ -5,7 +5,7 @@ import com.nuvio.tv.domain.playback.AudioLanguagePolicy
 
 /** Household playback contract. Independent of screens, networking and decoder engines. */
 object PlaybackPreferences {
-    const val MIN_BYTES = 1_000_000_000L
+    const val MIN_BYTES = 1L
     const val MAX_BYTES = 6_000_000_000L
 
     fun isAnime(genres: String?, originalLanguage: String? = null, videoId: String? = null): Boolean =
