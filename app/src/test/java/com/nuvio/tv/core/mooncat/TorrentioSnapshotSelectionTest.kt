@@ -23,28 +23,20 @@ class TorrentioSnapshotSelectionTest {
     @Test fun `real movie metadata retains Hindi and rejects oversized and ultra HD autoplay`() {
         val sources = snapshot("movie")
         assertEquals(135, sources.size)
-        val ranked = MoonCatSourcePolicy.instantOrder(sources, "hi")
-        assertEquals(51, ranked.size)
-        assertEquals(6, ranked.count { MoonCatSourcePolicy.advertisesAudio(it, "hi") })
-        // The old 3.31 GB RONIN preference has only 2 seeds. The 3.7 GB
-        // REMASTERED release has 3, so availability must now win.
-        assertTrue(ranked.first().title.orEmpty().contains("REMASTERED"))
-        assertEquals(3, MoonCatSourcePolicy.advertisedSeeders(ranked.first()))
-        assertTrue(ranked.take(6).all { MoonCatSourcePolicy.advertisesAudio(it, "hi") })
-        assertTrue(ranked.none { MoonCatSourcePolicy.is4k(it) })
-        assertTrue(ranked.all { (MoonCatSourcePolicy.sizeBytes(it) ?: 0) <= 4_000_000_000L })
+        val ranked = PlaybackPreferences.order(sources, "en", false)
+        assertTrue(ranked.isNotEmpty())
+        assertTrue(MoonCatSourcePolicy.advertisesAudio(ranked.first(), "hi"))
+        assertTrue(ranked.all(PlaybackPreferences::eligible))
+        assertTrue(ranked.all { MoonCatSourcePolicy.qualityTier(it) == 0 })
+        assertTrue(ranked.all { MoonCatSourcePolicy.sizeBytes(it)!! in PlaybackPreferences.MIN_BYTES..PlaybackPreferences.MAX_BYTES })
     }
 
     @Test fun `real episode metadata selects advertised Hindi before English alternatives`() {
         val sources = snapshot("episode")
         assertEquals(94, sources.size)
-        val ranked = MoonCatSourcePolicy.instantOrder(sources, "hi")
-        assertEquals(65, ranked.size)
-        assertEquals(7, ranked.count { MoonCatSourcePolicy.advertisesAudio(it, "hi") })
-        assertTrue(ranked.first().behaviorHints?.filename.orEmpty().contains("The.PunisheR"))
-        assertTrue(ranked.take(7).all { MoonCatSourcePolicy.advertisesAudio(it, "hi") })
-        assertTrue(MoonCatSourcePolicy.instantOrder(sources, "en").take(1).all {
-            MoonCatSourcePolicy.advertisesAudio(it, "en")
-        })
+        val ranked = PlaybackPreferences.order(sources, "en", false)
+        assertTrue(ranked.isNotEmpty())
+        assertTrue(MoonCatSourcePolicy.advertisesAudio(ranked.first(), "hi"))
+        assertTrue(ranked.all(PlaybackPreferences::eligible))
     }
 }

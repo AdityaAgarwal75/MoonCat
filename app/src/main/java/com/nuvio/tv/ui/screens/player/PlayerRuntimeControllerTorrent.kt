@@ -38,7 +38,7 @@ internal suspend fun PlayerRuntimeController.startTorrentStream(
     }
 
     val effectiveFilename = filename ?: currentFilename
-    return withTimeoutOrNull(30_000L) {
+    return withTimeoutOrNull(10_000L) {
         torrentService.startStream(
             infoHash, fileIdx, effectiveFilename, trackers,
             maxFileBytes = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES

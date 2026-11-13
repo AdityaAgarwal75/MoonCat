@@ -9,6 +9,14 @@ class SourceFailoverSession(private val maxAttempts: Int = 4) {
     private var attempts = 0
     private val failed = linkedSetOf<String>()
 
+    @Synchronized
+    fun reset() {
+        contentKey = null
+        attempts = 0
+        failed.clear()
+    }
+
+    @Synchronized
     fun begin(key: String, failedUrl: String?, failedHash: String?, fileIndex: Int?, headers: Map<String, String> = emptyMap(), localTorrent: Boolean = false): Boolean {
         if (contentKey != key) {
             contentKey = key
@@ -28,15 +36,18 @@ class SourceFailoverSession(private val maxAttempts: Int = 4) {
         return true
     }
 
-    fun candidates(streams: List<Stream>, language: String): List<Stream> =
-        MoonCatSourcePolicy.instantOrder(streams, language)
+    fun candidates(streams: List<Stream>, language: String): List<Stream> {
+        val failures = synchronized(this) { failed.toSet() }
+        return MoonCatSourcePolicy.instantOrder(streams, language)
             .filter { stream ->
                 (stream.getStreamUrl() != null || stream.getEffectiveInfoHash() != null ||
                     stream.serverTarget != null || stream.isYouTube() || stream.isDirectDebrid()) &&
-                    stream.playbackRequestKey() !in failed
+                    stream.playbackRequestKey() !in failures
             }
             .distinctBy { it.playbackRequestKey() }
+    }
 
+    @Synchronized
     fun attempted(stream: Stream) {
         failed.add(stream.playbackRequestKey())
     }

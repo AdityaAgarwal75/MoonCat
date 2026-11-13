@@ -132,4 +132,13 @@ class PlaybackSourceSessionTest {
         assertEquals(300L, testScheduler.currentTime)
     }
 
+    @Test fun `completed search can retract all candidates during the grace window`() = runTest {
+        val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(source("Hindi 1080p", "https://a"))))
+        val choice = async { PlaybackSourceSession().selectMetadata(states, "hi") }
+        runCurrent()
+        states.value = PlaybackSourceSession.Snapshot(complete = true)
+        runCurrent()
+        assertNull(choice.await())
+    }
+
 }

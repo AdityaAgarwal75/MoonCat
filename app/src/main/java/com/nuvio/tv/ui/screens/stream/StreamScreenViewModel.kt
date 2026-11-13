@@ -551,7 +551,7 @@ class StreamScreenViewModel @Inject constructor(
                 val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
                     val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
                         autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                            it, if ((season != null || episode != null || contentType.equals("series", ignoreCase = true)) && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) 4_000_000_000L
+                            it, if ((season != null || episode != null || contentType.equals("series", ignoreCase = true)) && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) com.nuvio.tv.core.mooncat.PlaybackPreferences.MAX_BYTES
                             else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES, allow4k = allow4k
                         )
                     }
@@ -578,6 +578,8 @@ class StreamScreenViewModel @Inject constructor(
                 // Scope selection separately from collection. Every incoming provider response
                 // remains visible to the pending language decision, including during native setup.
                 fun candidates(remaining: List<Stream>) = StreamAutoPlaySelector.selectAutoPlayCandidates(
+                    usePlaybackPreferences = true, originalLanguage = contentLanguage,
+                    anime = com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(_uiState.value.genres, contentLanguage, videoId),
                     preferredAudioLanguage = playerSettings.preferredAudioLanguage,
                     allow4k = allow4k,
                     streams = remaining,
@@ -591,8 +593,9 @@ class StreamScreenViewModel @Inject constructor(
                     preferBingeGroupInSelection = persistedBingeGroup != null
                 )
                 val eligible = withContext(Dispatchers.Default) {
-                    com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.instantOrder(
-                        candidates(autoPlayStreams), playerSettings.preferredAudioLanguage
+                    com.nuvio.tv.core.mooncat.PlaybackPreferences.order(
+                        candidates(autoPlayStreams), contentLanguage,
+                        com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(_uiState.value.genres, contentLanguage, videoId)
                     ).distinctBy { it.playbackRequestKey() }.take(32)
                 }
                 selectionSnapshots.value = com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot(
@@ -604,7 +607,7 @@ class StreamScreenViewModel @Inject constructor(
                         // Start the top metadata candidate through the normal player immediately.
                         // The player performs actual torrent setup and retains failure recovery.
                         val selected = com.nuvio.tv.core.mooncat.PlaybackSourceSession().selectMetadata(
-                            selectionSnapshots, playerSettings.preferredAudioLanguage
+                            selectionSnapshots, playerSettings.preferredAudioLanguage, preserveOrder = true
                         )
                         ensureActive()
                         if (selected != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {

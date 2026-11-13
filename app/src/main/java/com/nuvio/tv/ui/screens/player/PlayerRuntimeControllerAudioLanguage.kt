@@ -43,8 +43,7 @@ internal fun PlayerRuntimeController.requestAudioLanguage(language: String) {
     // This newer viewer intent supersedes any unresolved earlier source choice.
     debridResolveJob?.cancel()
     debridResolveJob = null
-    sourceRecoveryJob?.cancel()
-    sourceRecoveryJob = null
+    cancelSourceRecovery()
     val generation = audioLanguageSearchGeneration
     val requestKey = audioContentKey()
     val originalState = _uiState.value

@@ -72,9 +72,12 @@ object StreamAutoPlaySelector {
         preferBingeGroupInSelection: Boolean = false,
         bingeGroupOnly: Boolean = false,
         preferredAudioLanguage: String? = null,
-        allow4k: Boolean = false
+        allow4k: Boolean = false,
+        originalLanguage: String? = null,
+        anime: Boolean = false,
+        usePlaybackPreferences: Boolean = false
     ): Stream? {
-        return selectAutoPlayCandidates(streams, mode, regexPattern, source, installedAddonNames, selectedAddons, selectedPlugins, preferredBingeGroup, preferBingeGroupInSelection, bingeGroupOnly, preferredAudioLanguage, allow4k).firstOrNull()
+        return selectAutoPlayCandidates(streams, mode, regexPattern, source, installedAddonNames, selectedAddons, selectedPlugins, preferredBingeGroup, preferBingeGroupInSelection, bingeGroupOnly, preferredAudioLanguage, allow4k, originalLanguage, anime, usePlaybackPreferences).firstOrNull()
     }
 
     fun selectAutoPlayCandidates(
@@ -89,7 +92,10 @@ object StreamAutoPlaySelector {
         preferBingeGroupInSelection: Boolean = false,
         bingeGroupOnly: Boolean = false,
         preferredAudioLanguage: String? = null,
-        allow4k: Boolean = false
+        allow4k: Boolean = false,
+        originalLanguage: String? = null,
+        anime: Boolean = false,
+        usePlaybackPreferences: Boolean = false
     ): List<Stream> {
         if (streams.isEmpty()) return emptyList()
 
@@ -104,7 +110,13 @@ object StreamAutoPlaySelector {
             StreamAutoPlaySource.INSTALLED_ADDONS_ONLY -> streams.filter { it.serverTarget != null || it.addonName in installedAddonNames }
             StreamAutoPlaySource.ENABLED_PLUGINS_ONLY -> streams.filter { it.addonName !in installedAddonNames }
         }
-        val candidateStreams = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(sourceScopedStreams, preferredAudioLanguage, allow4k).filter { stream ->
+        fun rank(values: List<Stream>) = if (usePlaybackPreferences)
+            com.nuvio.tv.core.mooncat.PlaybackPreferences.order(values, originalLanguage, anime)
+            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(values, preferredAudioLanguage, allow4k)
+        fun languageTier(stream: Stream) = if (usePlaybackPreferences)
+            com.nuvio.tv.core.mooncat.PlaybackPreferences.languageTier(stream, originalLanguage, anime)
+            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(stream, preferredAudioLanguage ?: "hi")
+        val candidateStreams = rank(sourceScopedStreams).filter { stream ->
             val isAddonStream = stream.addonName in installedAddonNames
             if (stream.serverTarget != null) {
                 true
@@ -122,11 +134,10 @@ object StreamAutoPlaySelector {
         // not be limited by autoplay source/addon selection filters.
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
         if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
-            val bingeGroupMatch = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(streams, preferredAudioLanguage, allow4k).firstOrNull { stream ->
+            val bingeGroupMatch = rank(streams).firstOrNull { stream ->
                 !stream.isExternal() &&
                     (preferredAudioLanguage == null ||
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(stream, preferredAudioLanguage) ==
-                        candidateStreams.minOf { com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(it, preferredAudioLanguage) }) &&
+                        languageTier(stream) == candidateStreams.minOf { languageTier(it) }) &&
                     stream.behaviorHints?.bingeGroup == targetBingeGroup &&
                     isPlayable(stream)
             }

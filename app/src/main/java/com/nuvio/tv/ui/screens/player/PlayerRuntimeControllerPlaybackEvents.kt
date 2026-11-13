@@ -1692,8 +1692,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             cancelAudioLanguageSearch()
             debridResolveJob?.cancel()
             debridResolveJob = null
-            sourceRecoveryJob?.cancel()
-            sourceRecoveryJob = null
+            cancelSourceRecovery(resetFailures = true)
             switchToSourceStream(event.stream)
         }
         PlayerEvent.OnDismissTransientOverlay -> {

@@ -16,6 +16,8 @@ internal fun PlayerRuntimeController.releasePlayer(
 ) {
     logScrobbleDiagnostic("release_player", "flushPlaybackState=$flushPlaybackState")
     isReleasingPlayer = true
+    cancelStallWatchdog()
+    cancelFirstFrameWatchdog()
     com.nuvio.tv.core.recommendations.TvRecommendationManager.isPlaybackActive.value = false
     if (flushPlaybackState) {
         if (!keepTorrentStream) stopTorrentStream()
@@ -54,6 +56,8 @@ internal fun PlayerRuntimeController.releasePlayer(
     stopSidecarAddonSubtitle(clearView = true)
     subtitleTimingRefreshJob?.cancel()
     subtitleTimingRefreshJob = null
+    playerInitializationJob?.cancel()
+    playerInitializationJob = null
     playbackPreparationJob?.cancel()
     playbackPreparationJob = null
     traktMappingJob?.cancel()

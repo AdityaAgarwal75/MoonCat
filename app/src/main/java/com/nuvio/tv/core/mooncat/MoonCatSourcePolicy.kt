@@ -5,11 +5,10 @@ import com.nuvio.tv.domain.model.Stream
 /** Conservative defaults for the 1080p Fire TV Stick. Metadata is a hint, not proof of compatibility. */
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 100_000_000_000L
-    const val USER_MAX_FILE_BYTES = 4_000_000_000L
+    const val USER_MAX_FILE_BYTES = PlaybackPreferences.MAX_BYTES
     fun withinUserSizeLimit(stream: Stream): Boolean =
         sizeBytes(stream)?.let { it in 1..USER_MAX_FILE_BYTES } ?: true
-    fun visibleSource(stream: Stream): Boolean = withinUserSizeLimit(stream) && !is4k(stream) &&
-        !ultraHd.containsMatchIn(text(stream))
+    fun visibleSource(stream: Stream): Boolean = PlaybackPreferences.eligible(stream)
     private val excluded = Regex("""(?i)((?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val aboveHd = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b)""")
     private val fourK = Regex("""(?i)(\b2160p\b|3840x2160|\b4[ ._-]?k\b)""")
@@ -156,7 +155,15 @@ object MoonCatSourcePolicy {
     }
 
     /** Seed counts are availability hints, never measured bandwidth. */
-    fun advertisedSeeders(stream: Stream): Int {
+    fun advertisedSeeders(stream: Stream): Int = seederCount(stream) ?: 0
+
+    fun availabilityTier(stream: Stream): Int {
+        if (!stream.isTorrent()) return 0
+        val seeds = seederCount(stream)
+        return if (seeds == null) 1 else if (seeds > 0) 0 else 2
+    }
+
+    private fun seederCount(stream: Stream): Int? {
         val content = text(stream)
         return sequenceOf(seederIcon, seederLabel, countBeforeLabel)
             .flatMap { it.findAll(content) }
@@ -166,38 +173,39 @@ object MoonCatSourcePolicy {
                 count.trimEnd('k', 'm').trim().toDoubleOrNull()?.let {
                     (it * multiplier).coerceIn(0.0, Int.MAX_VALUE.toDouble()).toInt()
                 }
-            }.maxOrNull() ?: 0
+            }.maxOrNull()
     }
 
-    private data class InstantRank(
-        val stream: Stream, val language: Int, val quality: Int,
-        val seeders: Int, val release: Int, val size: Long
+    /** One ranking boundary for initial playback, episodes and recovery.
+     * A known empty swarm must not beat a viable fallback merely by advertising 1080p.
+     * Parse each metadata field once per candidate, not inside an O(n log n) comparator.
+     */
+    private data class Ranked(
+        val stream: Stream, val language: Int, val availability: Int,
+        val torrentSeeders: Int, val quality: Int, val seeders: Int,
+        val release: Int, val size: Long
     )
 
-    /** Highest advertised availability wins within the preferred audio/resolution tier.
-     * File size is only a tie breaker, never a reason to reject a better seeded file.
-     */
     fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
-        streams.asSequence().filter { suitable(it, USER_MAX_FILE_BYTES) && !it.isExternal() }
-            .map { stream ->
-                InstantRank(stream, languageTier(stream, language), qualityTier(stream),
-                    advertisedSeeders(stream), releaseTier(stream), sizeBytes(stream) ?: Long.MAX_VALUE)
-            }.sortedWith(compareBy<InstantRank> { it.language }.thenBy { it.quality }
-                .thenByDescending { it.seeders }.thenBy { it.release }.thenBy { it.size })
-            .map { it.stream }.toList()
+        ordered(streams, language, false, USER_MAX_FILE_BYTES).filter { !it.isExternal() }
 
-    /** Include well-seeded options early in the readiness race across resolutions. */
     fun readinessOrder(streams: List<Stream>, language: String): List<Stream> =
-        streams.sortedWith(compareBy<Stream> { languageTier(it, language) }
-            .thenByDescending { advertisedSeeders(it) })
-
-    private data class Ranked(val stream: Stream, val language: Int, val quality: Int, val release: Int, val seeders: Int)
+        ordered(streams, language, false, MAX_FILE_BYTES)
 
     fun rank(streams: List<Stream>, preferredLanguage: String? = null, allow4k: Boolean = false): List<Stream> =
-        streams.asSequence().filter { suitable(it, allow4k = allow4k) }.map { stream ->
-            Ranked(stream, if (preferredLanguage == null) 0 else languageTier(stream, preferredLanguage),
-                qualityTier(stream), releaseTier(stream), advertisedSeeders(stream))
-        }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.quality }
-            .thenByDescending { it.seeders }.thenBy { it.release }
-            .thenBy { if (it.stream.isTorrent()) 1 else 0 }).map { it.stream }.toList()
+        ordered(streams, preferredLanguage, allow4k, MAX_FILE_BYTES)
+
+    private fun ordered(streams: List<Stream>, language: String?, allow4k: Boolean, maxBytes: Long): List<Stream> =
+        streams.asSequence().filter { suitable(it, maxBytes, allow4k) }.map { stream ->
+            val seeds = seederCount(stream)
+            val torrent = stream.isTorrent()
+            Ranked(stream, if (language == null) 0 else languageTier(stream, language),
+                if (!torrent || (seeds != null && seeds > 0)) 0 else if (seeds == null) 1 else 2,
+                if (torrent) seeds ?: 0 else 0, qualityTier(stream), seeds ?: 0,
+                releaseTier(stream), sizeBytes(stream) ?: Long.MAX_VALUE)
+        }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.availability }
+            .thenBy { if (it.quality in 0..1) 0 else it.quality }
+            .thenByDescending { it.torrentSeeders }.thenBy { it.quality }
+            .thenByDescending { it.seeders }.thenBy { it.release }.thenBy { it.size })
+            .map { it.stream }.toList()
 }

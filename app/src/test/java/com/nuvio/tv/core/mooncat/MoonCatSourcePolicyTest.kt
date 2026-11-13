@@ -51,7 +51,7 @@ class MoonCatSourcePolicyTest {
     }
     @Test fun `high availability cannot bypass resolution size release and audio preferences`() {
         val valid = source("Hindi 1080p 1.2 GB 👤 5")
-        val unsafe = listOf(source("Hindi 2160p 3 GB 👤 9999"), source("Hindi 1080p 5 GB 👤 9999"),
+        val unsafe = listOf(source("Hindi 2160p 3 GB 👤 9999"), source("Hindi 1080p 8 GB 👤 9999"),
             source("Hindi 1080p CAM 2 GB 👤 9999"), source("English 1080p 2 GB 👤 9999"))
         assertEquals(listOf(valid, unsafe.last()), MoonCatSourcePolicy.instantOrder(unsafe + valid, "hi"))
     }
@@ -67,9 +67,10 @@ class MoonCatSourcePolicyTest {
         val wellSeeded = source("English 1080p 👤 656 1.3 GB").copy(infoHash = "second")
         assertEquals(wellSeeded, MoonCatSourcePolicy.readinessOrder(listOf(highResolution, wellSeeded), "en").first())
     }
-    @Test fun `display limit excludes known files above four gigabytes`() {
+    @Test fun `display limit accepts five GB and excludes files above six gigabytes`() {
         assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 4 GB")))
-        assertFalse(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 2160p 4.1 GB")))
+        assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 5 GB")))
+        assertFalse(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 8 GB")))
         assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film size unknown")))
         assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 2160p 2 GB")))
         assertFalse(MoonCatSourcePolicy.visibleSource(source("Film UHD 2 GB")))
@@ -206,6 +207,25 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.suitable(uhd.copy(url = null, infoHash = "abc"), allow4k = true))
         assertFalse(MoonCatSourcePolicy.suitable(source("English 8K", "https://example.com/8k"), allow4k = true))
         assertTrue(MoonCatSourcePolicy.suitable(source("English 4K REMUX", "https://example.com/remux"), allow4k = true))
+    }
+
+    @Test fun `viable torrent outranks a dead higher resolution torrent for every selection path`() {
+        val dead = source("Hindi 1080p seeds: 0").copy(infoHash = "dead")
+        val live = source("Hindi 720p seeds: 250").copy(infoHash = "live")
+        assertEquals(live, MoonCatSourcePolicy.instantOrder(listOf(dead, live), "hi").first())
+        assertEquals(live, MoonCatSourcePolicy.rank(listOf(dead, live), "hi").first())
+    }
+
+    @Test fun `unknown availability is preferable to an explicitly dead swarm`() {
+        val dead = source("Hindi 1080p seeds: 0").copy(infoHash = "dead")
+        val unknown = source("Hindi 720p").copy(infoHash = "unknown")
+        assertEquals(unknown, MoonCatSourcePolicy.instantOrder(listOf(dead, unknown), "hi").first())
+    }
+
+    @Test fun `larger viable swarm outranks higher resolution in same audio tier`() {
+        val weak = source("Hindi 1080p seeds: 2").copy(infoHash = "weak")
+        val live = source("Hindi 720p seeds: 500").copy(infoHash = "live")
+        assertEquals(live, MoonCatSourcePolicy.instantOrder(listOf(weak, live), "hi").first())
     }
 
 }

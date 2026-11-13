@@ -232,7 +232,7 @@ class StreamRepositoryImpl @Inject constructor(
                 streamAddons.forEach { addon ->
                     launch {
                         try {
-                            val streamsResult = requestAddonStreams(addonSlots) {
+                            val streamsResult = requestAddonStreams(addonSlots, totalTimeoutMs = 8_000L, attemptTimeoutMs = 3_500L) {
                                 getStreamsFromAddon(addon, requestType, requestId)
                             }
                             when (streamsResult) {

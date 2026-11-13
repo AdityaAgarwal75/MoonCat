@@ -61,4 +61,13 @@ class AddonStreamRequestTest {
         assertEquals(1, calls)
         assertEquals(1, slots.availablePermits)
     }
+    @Test fun `interactive source search has a total budget including queueing and retry`() = runTest {
+        val slots = Semaphore(1, 1)
+        val result = requestAddonStreams<String>(slots, totalTimeoutMs = 8_000L, attemptTimeoutMs = 3_500L) {
+            error("must not run while queued")
+        }
+        assertEquals(NetworkResult.Error("Source timed out"), result)
+        assertEquals(8_000L, testScheduler.currentTime)
+    }
+
 }

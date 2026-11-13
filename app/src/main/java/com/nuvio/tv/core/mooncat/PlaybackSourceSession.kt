@@ -3,6 +3,8 @@ package com.nuvio.tv.core.mooncat
 import com.nuvio.tv.domain.model.Stream
 import com.nuvio.tv.core.player.playbackRequestKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.StateFlow
@@ -20,13 +22,16 @@ class PlaybackSourceSession(
     /** Briefly collect competing provider results; never run bandwidth/preload races here.
      * Selection uses the latest snapshot so a later popular source beats an early weak one.
      */
-    suspend fun selectMetadata(snapshots: StateFlow<Snapshot>, language: String): Stream? {
+    suspend fun selectMetadata(snapshots: StateFlow<Snapshot>, language: String, preserveOrder: Boolean = false): Stream? {
         val first = snapshots.first { it.candidates.isNotEmpty() || it.complete }
         if (first.candidates.isEmpty()) return null
         if (!first.complete) {
             withTimeoutOrNull(languageGraceMs) { snapshots.first { it.complete } }
         }
-        return MoonCatSourcePolicy.instantOrder(snapshots.value.candidates, language).firstOrNull()
+        return withContext(Dispatchers.Default) {
+            val candidates = snapshots.value.candidates
+            (if (preserveOrder) candidates else MoonCatSourcePolicy.instantOrder(candidates, language)).firstOrNull()
+        }
     }
 
     suspend fun select(

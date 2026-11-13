@@ -452,6 +452,7 @@ class PlayerRuntimeController(
     internal var startupLoadingReportJob: Job? = null
     internal var sourceStreamsJob: Job? = null
     internal var sourceRecoveryJob: Job? = null
+    internal val sourceRecoveryGate = com.nuvio.tv.core.player.RecoveryRequestGate()
     internal var audioLanguageSearchJob: Job? = null
     internal var audioLanguageResolveJob: Job? = null
     internal var requestedAudioLanguageForPlayback: String? = null
@@ -692,6 +693,7 @@ class PlayerRuntimeController(
     internal var hasRequestedScrobbleStartForCurrentItem: Boolean = false
     internal var scrobbleStartRequestGeneration: Long = 0L
     internal var playbackPreparationJob: Job? = null
+    internal var playerInitializationJob: Job? = null
     internal var traktMappingJob: Job? = null
     internal var hasSentCompletionScrobbleForCurrentItem: Boolean = false
 
@@ -784,7 +786,7 @@ class PlayerRuntimeController(
 
     fun onCleared() {
         cancelAudioLanguageSearch()
-        sourceRecoveryJob?.cancel()
+        cancelSourceRecovery()
         playerSession.close()
         stopServerPlayback()
         releasePlayer()

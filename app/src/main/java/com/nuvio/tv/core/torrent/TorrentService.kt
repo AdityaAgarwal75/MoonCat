@@ -266,7 +266,7 @@ class TorrentService @Inject constructor(
             preparedStream = stream
             // Validate the selected file, not a possibly misleading addon label or season pack size.
             // This runs before the local playback route is attached; catch cleanup stops prepared streams.
-            require(stream.fileSize > 0L && stream.fileSize <= maxFileBytes) {
+            require(stream.fileSize >= com.nuvio.tv.core.mooncat.PlaybackPreferences.MIN_BYTES && stream.fileSize <= maxFileBytes) {
                 "Selected video exceeds the MoonCat size limit or has no valid size. Choose another source."
             }
             logPhase(

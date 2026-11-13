@@ -163,7 +163,8 @@ internal fun PlayerRuntimeController.initializePlayer(
     mpvMediaLoadPrepared = false
     val afrPreflightToken = afrPreflightGate.token()
 
-    scope.launch {
+    playerInitializationJob?.cancel()
+    playerInitializationJob = scope.launch {
         try {
             if (allowEngineFailover) {
                 startupEngineFailoverTriggered = false
@@ -213,12 +214,11 @@ internal fun PlayerRuntimeController.initializePlayer(
             // Re-apply on every (re)initialization without dropping the user's tweak on the current stream.
             applyEffectiveAudioDelay()
             cachedDecoderPriority = playerSettings.decoderPriority
-            val preferredAudioLanguages = (listOfNotNull(requestedAudioLanguageForPlayback) + resolvePreferredAudioLanguages(
-                preferredAudioLanguage = playerSettings.preferredAudioLanguage,
-                secondaryPreferredAudioLanguage = playerSettings.secondaryPreferredAudioLanguage,
-                deviceLanguages = resolveDeviceAudioLanguages(),
-                contentOriginalLanguage = contentLanguage
-            )).distinct()
+            val preferredAudioLanguages = (listOfNotNull(requestedAudioLanguageForPlayback) +
+                com.nuvio.tv.core.mooncat.PlaybackPreferences.audioLanguages(contentLanguage,
+                    currentVideoId?.startsWith("kitsu:") == true ||
+                    com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId))
+                ).distinct()
             mpvPreferredAudioLanguages = preferredAudioLanguages
             mpvHi10pGnextSoftwareFallbackEnabledSetting =
                 playerSettings.mpvHi10pGnextSoftwareFallbackEnabled
@@ -1887,6 +1887,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 fetchAddonSubtitles()
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             if (
                 maybeAutoSwitchInternalPlayerOnStartupError(
                     detailedError = e.message ?: context.getString(com.nuvio.tv.R.string.player_error_initialize_failed),
