@@ -107,8 +107,8 @@ jobs:
             app/build/reports/lint-results-*.html
           if-no-files-found: warn
           retention-days: 30
-      - name: Publish signed v2 release
-        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/fix/source-selection-beta17' || github.ref == 'refs/heads/fix/fire-tv-beta16' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/work/mooncat-v2' || github.ref == 'refs/heads/work/mooncat-fast-start' || github.ref == 'refs/heads/improve/source-selection-beta7' || github.ref == 'refs/heads/fix/stream-recovery-beta11') && steps.identity.outputs.preview == 'false'
+      - name: Publish signed MoonCat release
+        if: github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/fix/source-selection-beta17' || github.ref == 'refs/heads/fix/fire-tv-beta16' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/redesign/mooncat-v3' || github.ref == 'refs/heads/work/mooncat-v2' || github.ref == 'refs/heads/work/mooncat-fast-start' || github.ref == 'refs/heads/improve/source-selection-beta7' || github.ref == 'refs/heads/fix/stream-recovery-beta11') && steps.identity.outputs.preview == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -117,7 +117,9 @@ jobs:
           test ! -z "$VERSION"
           FLAGS=()
           if [[ "$VERSION" == *-beta* || "$VERSION" == *-alpha* || "$VERSION" == *-rc* ]]; then FLAGS+=(--prerelease); fi
-          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "MoonCat $VERSION" --notes-file docs/RELEASE-v2.md "${FLAGS[@]}"
+          NOTES_FILE=docs/RELEASE-v2.md
+          if [ "$GITHUB_REF" = "refs/heads/redesign/mooncat-v3" ]; then NOTES_FILE=docs/RELEASE-v3.md; fi
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" --title "MoonCat $VERSION" --notes-file "$NOTES_FILE" "${FLAGS[@]}"
       - name: Remove signing material
         if: always()
         run: rm -f local.properties "$RUNNER_TEMP/mooncat-release.jks"
