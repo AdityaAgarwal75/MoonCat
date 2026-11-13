@@ -8,7 +8,13 @@ object MoonCatSourcePolicy {
     const val USER_MAX_FILE_BYTES = PlaybackPreferences.MAX_BYTES
     fun withinUserSizeLimit(stream: Stream): Boolean =
         sizeBytes(stream)?.let { it in 1..USER_MAX_FILE_BYTES } ?: true
-    fun visibleSource(stream: Stream): Boolean = PlaybackPreferences.eligible(stream)
+    fun visibleSource(stream: Stream): Boolean {
+        // Manual lists include small 1080p, 720p and SD sources. Autoplay has
+        // its own 1080p policy, and both enforce the 6 GB upper size limit.
+        if (stream.isExternal()) return false
+        if (stream.serverTarget != null || stream.isYouTube()) return true
+        return suitable(stream, USER_MAX_FILE_BYTES) && withinUserSizeLimit(stream)
+    }
     private val excluded = Regex("""(?i)((?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
     private val aboveHd = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b)""")
     private val fourK = Regex("""(?i)(\b2160p\b|3840x2160|\b4[ ._-]?k\b)""")
