@@ -137,7 +137,8 @@ object StreamAutoPlaySelector {
             val bingeGroupMatch = rank(streams).firstOrNull { stream ->
                 !stream.isExternal() &&
                     (preferredAudioLanguage == null ||
-                        languageTier(stream) == candidateStreams.minOf { languageTier(it) }) &&
+                        languageTier(stream) == (if (usePlaybackPreferences) languageTier(candidateStreams.first())
+                            else candidateStreams.minOf { languageTier(it) })) &&
                     stream.behaviorHints?.bingeGroup == targetBingeGroup &&
                     isPlayable(stream)
             }
@@ -161,7 +162,7 @@ object StreamAutoPlaySelector {
                     !it.isTorrent() || it.debridCacheStatus == null ||
                         it.debridCacheStatus.state == StreamDebridCacheState.CACHED
                 }
-                ready + pending
+                if (usePlaybackPreferences) playable else ready + pending
             }
             StreamAutoPlayMode.REGEX_MATCH -> {
                 val pattern = regexPattern.trim()

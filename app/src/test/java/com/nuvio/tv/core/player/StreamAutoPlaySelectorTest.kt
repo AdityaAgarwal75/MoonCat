@@ -13,6 +13,16 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class StreamAutoPlaySelectorTest {
+    @Test fun `V3 dub preference is not overridden by optional debrid cache badges`() {
+        val hindi = stream("Torrentio", name = "Hindi 1080p 2 GB seeds: 500", infoHash = "hi", cacheState = StreamDebridCacheState.NOT_CACHED)
+        val english = stream("Torrentio", name = "English 1080p 2 GB seeds: 100", infoHash = "en", cacheState = StreamDebridCacheState.CACHED)
+        assertEquals(hindi, StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = listOf(hindi, english), mode = StreamAutoPlayMode.FIRST_STREAM,
+            regexPattern = "", source = StreamAutoPlaySource.ALL_SOURCES,
+            installedAddonNames = setOf("Torrentio"), selectedAddons = emptySet(), selectedPlugins = emptySet(),
+            originalLanguage = "en", usePlaybackPreferences = true))
+    }
+
 
     @Test
     fun `orderAddonStreams follows installed addon order and leaves plugins last`() {
