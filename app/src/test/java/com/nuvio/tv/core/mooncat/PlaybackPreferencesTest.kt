@@ -15,13 +15,19 @@ class PlaybackPreferencesTest {
         assertFalse(PlaybackPreferences.isAnime(null, "ja", "tt123"))
     }
 
-    @Test fun `only 1080p releases between one and six decimal GB are eligible`() {
-        listOf("720p 2 GB", "2160p 5 GB", "1080p 900 MB", "1080p 8 GB", "Unknown 2 GB", "1080p").forEach {
+    @Test fun `autoplay accepts sub one GB 1080p releases up to six GB`() {
+        listOf("720p 2 GB", "2160p 5 GB", "1080p 8 GB", "Unknown 2 GB", "1080p").forEach {
             assertFalse(it, PlaybackPreferences.eligible(source(it).copy(infoHash = "hash")))
         }
-        listOf("1080p 1 GB", "1080p 5 GB", "1080p 6 GB").forEach {
+        listOf("1080p 250 MB", "1080p 900 MB", "1080p 1 GB", "1080p 5 GB", "1080p 6 GB").forEach {
             assertTrue(it, PlaybackPreferences.eligible(source(it).copy(infoHash = "hash")))
         }
+    }
+
+    @Test fun `sub one GB release remains an autoplay candidate`() {
+        val small = source("Hindi 1080p 700 MB seeds: 50").copy(infoHash = "small")
+        val large = source("Hindi 1080p 6.5 GB seeds: 500").copy(infoHash = "large")
+        assertEquals(listOf(small), PlaybackPreferences.order(listOf(large, small), "en", false))
     }
 
     @Test fun `Hindi movies fall back to original audio before another dub`() {
