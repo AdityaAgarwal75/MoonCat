@@ -68,6 +68,7 @@ class MoonCatSourcePolicyTest {
         assertEquals(wellSeeded, MoonCatSourcePolicy.readinessOrder(listOf(highResolution, wellSeeded), "en").first())
     }
     @Test fun `display limit accepts five GB and excludes files above six gigabytes`() {
+        assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 450 MB")))
         assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 4 GB")))
         assertTrue(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 5 GB")))
         assertFalse(MoonCatSourcePolicy.withinUserSizeLimit(source("Film 1080p 8 GB")))
@@ -75,6 +76,12 @@ class MoonCatSourcePolicyTest {
         assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 2160p 2 GB")))
         assertFalse(MoonCatSourcePolicy.visibleSource(source("Film UHD 2 GB")))
         assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p 1.3 GB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p 900 MB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 720p 450 MB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 480p 250 MB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p 6 GB")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 1080p 6.1 GB")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 1080p CAM 450 MB")))
     }
     @Test fun `episode numbers and sizes do not masquerade as 4k resolution`() {
         assertTrue(MoonCatSourcePolicy.suitable(source("Serial Episode 2160 Hindi 480p 2160 MB")))
