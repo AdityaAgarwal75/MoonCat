@@ -110,8 +110,8 @@ android {
         ndk { abiFilters += listOf(providers.gradleProperty("mooncatAbi").orElse("armeabi-v7a").get()) }
         targetSdk = 36
         buildConfigField("boolean", "DETAIL_SOURCE_WARMUP", providers.gradleProperty("mooncatDetailWarmup").orNull?.toBooleanStrictOrNull()?.toString() ?: "true")
-        versionCode = 30000
-        versionName = "3.0.0-alpha.1"
+        versionCode = 30001
+        versionName = "3.0.0-alpha.2"
 
         buildConfigField("String", "PARENTAL_GUIDE_API_URL", "\"${localProperties.getProperty("PARENTAL_GUIDE_API_URL", "")}\"")
         buildConfigField("String", "INTRODB_API_URL", "\"${localProperties.getProperty("INTRODB_API_URL", "")}\"")
