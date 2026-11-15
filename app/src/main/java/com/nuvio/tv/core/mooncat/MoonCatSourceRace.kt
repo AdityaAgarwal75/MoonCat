@@ -67,7 +67,7 @@ object MoonCatSourceRace {
     internal fun selectMeasured(samples: List<Pair<Stream, Double>>, language: String = "hi", allow4k: Boolean = false): Stream? {
         val usable = samples.filter { (stream, speed) ->
             MoonCatSourcePolicy.suitable(stream, allow4k = allow4k) && speed.isFinite() && speed > 0 &&
-                (!MoonCatSourcePolicy.is4k(stream) || (allow4k && speed >= MIN_4K_BYTES_PER_SECOND))
+                !MoonCatSourcePolicy.is4k(stream)
         }
         val withHeadroom = usable.filter { (stream, speed) ->
             speed >= if (MoonCatSourcePolicy.qualityTier(stream) == 0) 1_000_000.0 else 500_000.0

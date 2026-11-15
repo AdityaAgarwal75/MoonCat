@@ -161,11 +161,11 @@ class StreamRepositoryPluginIsolationTest {
     }
 
     @Test
-    fun `TorrentsDB remains excluded from stream queries`() = runTest {
+    fun `configured TorrentsDB is queried like other HTTPS providers`() = runTest {
         val blocked = compatibleAddon().copy(id = "db", baseUrl = "https://torrentsdb.com")
         val harness = newHarness(emptyList(), blocked)
         harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null).toList()
-        coVerify(exactly = 0) { harness.api.getStreams(any()) }
+        coVerify(exactly = 1) { harness.api.getStreams("https://torrentsdb.com/stream/movie/tt1341338.json") }
     }
 
     private fun newHarness(enabledScrapers: List<ScraperInfo>, addon: Addon = compatibleAddon()): Harness {

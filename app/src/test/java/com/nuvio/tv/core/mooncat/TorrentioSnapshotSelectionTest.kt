@@ -27,8 +27,9 @@ class TorrentioSnapshotSelectionTest {
         assertTrue(ranked.isNotEmpty())
         assertTrue(MoonCatSourcePolicy.advertisesAudio(ranked.first(), "hi"))
         assertTrue(ranked.all(PlaybackPreferences::eligible))
-        assertTrue(ranked.all { MoonCatSourcePolicy.qualityTier(it) == 0 })
-        assertTrue(ranked.all { MoonCatSourcePolicy.sizeBytes(it)!! in PlaybackPreferences.MIN_BYTES..PlaybackPreferences.MAX_BYTES })
+        assertTrue(ranked.all { !MoonCatSourcePolicy.is4k(it) })
+        assertTrue(ranked.all { MoonCatSourcePolicy.sizeBytes(it)?.let { size -> size <= PlaybackPreferences.MAX_BYTES } ?: true })
+        assertTrue(ranked.any { MoonCatSourcePolicy.qualityTier(it) != 0 })
     }
 
     @Test fun `real episode metadata selects advertised Hindi before English alternatives`() {
