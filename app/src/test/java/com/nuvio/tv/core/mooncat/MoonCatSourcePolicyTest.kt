@@ -53,7 +53,7 @@ class MoonCatSourcePolicyTest {
         val valid = source("Hindi 1080p 1.2 GB 👤 5")
         val unsafe = listOf(source("Hindi 2160p 3 GB 👤 9999"), source("Hindi 1080p 8 GB 👤 9999"),
             source("Hindi 1080p CAM 2 GB 👤 9999"), source("English 1080p 2 GB 👤 9999"))
-        assertEquals(listOf(valid, unsafe.last()), MoonCatSourcePolicy.instantOrder(unsafe + valid, "hi"))
+        assertEquals(listOf(valid, unsafe[2], unsafe.last()), MoonCatSourcePolicy.instantOrder(unsafe + valid, "hi"))
     }
     @Test fun `other known sizes remain fallbacks before unknown sizes`() {
         val unknown = source("Hindi 1080p 3.9 GB 👤 500").copy(infoHash = "unknown")
@@ -81,7 +81,10 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 480p 250 MB")))
         assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p 6 GB")))
         assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 1080p 6.1 GB")))
-        assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 1080p CAM 450 MB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p CAM 450 MB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1440p 2 GB")))
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("Film 1080p size unknown")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("Film 8K 3 GB")))
     }
     @Test fun `episode numbers and sizes do not masquerade as 4k resolution`() {
         assertTrue(MoonCatSourcePolicy.suitable(source("Serial Episode 2160 Hindi 480p 2160 MB")))
@@ -116,8 +119,9 @@ class MoonCatSourcePolicyTest {
     }
     @Test fun `unlabelled source cannot bypass the structured resolution cap`() {
         assertFalse(MoonCatSourcePolicy.suitable(source("Video").copy(qualityValue = 2160)))
-        listOf("UHD Hindi", "Ultra HD English", "3840x2160 Hindi", "4-K", "1440p")
+        listOf("UHD Hindi", "Ultra HD English", "3840x2160 Hindi", "4-K", "4320p", "8K")
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
+        assertTrue(MoonCatSourcePolicy.suitable(source("1440p")))
     }
 
     @Test fun `playback candidates keep original language fallbacks after Hindi and English`() {
@@ -139,9 +143,11 @@ class MoonCatSourcePolicyTest {
         assertFalse(MoonCatSourcePolicy.suitable(source("4KHDHub 2160p Hindi 3 GB")))
     }
 
-    @Test fun `4k without opt in and camera releases are excluded`() {
-        listOf("Film 2160p 3 GB", "Film 4K 2 GB", "Film 1080p CAM", "Film 1080p TeleSync")
+    @Test fun `4k is blocked but camera releases remain selectable`() {
+        listOf("Film 2160p 3 GB", "Film 4K 2 GB")
             .forEach { assertFalse(it, MoonCatSourcePolicy.suitable(source(it))) }
+        listOf("Film 1080p CAM", "Film 1080p TeleSync", "Film 720p PreDVD")
+            .forEach { assertTrue(it, MoonCatSourcePolicy.suitable(source(it))) }
         assertTrue(MoonCatSourcePolicy.suitable(source("Film Hindi English Japanese 1080p 2.5 GB")))
     }
     @Test fun `ranking prefers1080 then720 without removing multi audio releases`() {
@@ -160,16 +166,27 @@ class MoonCatSourcePolicyTest {
         assertEquals(listOf(english), MoonCatSourcePolicy.forPreferredLanguage(listOf(english, unknown), "hi"))
         assertEquals(listOf(english), MoonCatSourcePolicy.forPreferredLanguage(listOf(english), "hi"))
     }
-    @Test fun `explicit audio inspection does not hide large or remux HD dubs`() {
+    @Test fun `audio inspection obeys the six GB and 4K limit`() {
         val largeDub = source("Hindi 1080p REMUX 18 GB", "https://cdn.example/large.mkv")
-        assertTrue(MoonCatSourcePolicy.suitable(largeDub))
-        assertTrue(MoonCatSourcePolicy.canInspectAudio(largeDub))
-        assertEquals(listOf(largeDub), MoonCatSourcePolicy.audioInspectionCandidates(listOf(largeDub), "hi"))
+        assertFalse(MoonCatSourcePolicy.suitable(largeDub))
+        assertFalse(MoonCatSourcePolicy.canInspectAudio(largeDub))
+        assertTrue(MoonCatSourcePolicy.audioInspectionCandidates(listOf(largeDub), "hi").isEmpty())
         assertFalse(MoonCatSourcePolicy.canInspectAudio(source("Hindi 2160p 4K")))
         assertFalse(MoonCatSourcePolicy.canInspectAudio(source("Hindi 8K 4320p"), allow4k = true))
-        assertTrue(MoonCatSourcePolicy.canInspectAudio(source("Hindi 4K 2160p"), allow4k = true))
+        assertFalse(MoonCatSourcePolicy.canInspectAudio(source("Hindi 4K 2160p"), allow4k = true))
+        assertTrue(MoonCatSourcePolicy.canInspectAudio(source("Hindi HDCAM 1080p 5 GB")))
     }
 
+    @Test fun `known size above six GB is blocked but 6 GB exactly is allowed`() {
+        assertTrue(MoonCatSourcePolicy.visibleSource(source("1080p 6 GB")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("1080p 6.01 GB")))
+        assertFalse(MoonCatSourcePolicy.visibleSource(source("720p 7 GiB")))
+    }
+    @Test fun `CAM with many peers does not outrank clean release at same resolution`() {
+        val cam = source("Hindi CAM 1080p seeds: 9999").copy(infoHash = "cam")
+        val web = source("Hindi WEB-DL 1080p seeds: 100").copy(infoHash = "web")
+        assertEquals(web, MoonCatSourcePolicy.rank(listOf(cam, web), "hi").first())
+    }
     @Test fun `decimal and binary size units differ`() {
         assertEquals(7_000_000_000L, MoonCatSourcePolicy.sizeBytes(source("7 GB")))
         assertEquals(7_516_192_768L, MoonCatSourcePolicy.sizeBytes(source("7 GiB")))
@@ -181,9 +198,9 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.advertisesAudio(source("Film.1080p.HIN-ENG.WEB-DL"), "hi"))
         assertTrue(MoonCatSourcePolicy.advertisesAudio(source("Film [HI + EN] BluRay"), "en"))
     }
-    @Test fun `large camera releases remain excluded regardless of claimed HD resolution`() {
+    @Test fun `CAM TS and PreDVD releases remain available under six GB`() {
         listOf("HD-CAM 1080p 5 GB", "HDTS Hindi 4 GB", "HDTC 5 GB", "HQCAM 1080p", "HQ-TS Hindi", "TSRip", "PDVDRip", "TS 1080p", "TC Hindi", "PreDVD 1080p").forEach {
-            assertFalse(it, MoonCatSourcePolicy.suitable(source(it)))
+            assertTrue(it, MoonCatSourcePolicy.suitable(source(it)))
         }
         assertTrue(MoonCatSourcePolicy.suitable(source("BluRay 1080p Hindi English 5 GB")))
         assertTrue(MoonCatSourcePolicy.suitable(source("WEBRip 1080p 2 GB")))
@@ -196,8 +213,8 @@ class MoonCatSourcePolicyTest {
         val low = source("1080p Hindi 👤 2"); val high = source("1080p Hindi 👤 240")
         assertEquals(high, MoonCatSourcePolicy.rank(listOf(low, high)).first())
     }
-    @Test fun `old cached camera and wrong-language releases cannot bypass the new policy`() {
-        assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HDCAM.Hindi.mkv", 5_000_000_000L, "hi", 7_000_000_000L))
+    @Test fun `cached camera files are allowed when language and size match`() {
+        assertTrue(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HDCAM.Hindi.mkv", 5_000_000_000L, "hi", 7_000_000_000L))
         assertFalse(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.Japanese.WEB-DL.mkv", null, "hi", 7_000_000_000L))
         assertTrue(MoonCatSourcePolicy.reusableRelease("1080p", "Movie.HIN.ENG.WEB-DL.mkv", 2_000_000_000L, "hi", 7_000_000_000L))
     }
@@ -207,13 +224,13 @@ class MoonCatSourcePolicyTest {
         assertTrue(MoonCatSourcePolicy.suitable(source("Tamil Hindi English 1080p")))
         assertTrue(MoonCatSourcePolicy.suitable(source("1080p")))
     }
-    @Test fun `4k allows torrents when enabled while8k remains excluded`() {
+    @Test fun `legacy 4k setting cannot override the hard ban`() {
         val uhd = source("English 2160p WEB-DL 5 GB", "https://example.com/4k")
         assertFalse(MoonCatSourcePolicy.suitable(uhd))
-        assertTrue(MoonCatSourcePolicy.suitable(uhd, allow4k = true))
-        assertTrue(MoonCatSourcePolicy.suitable(uhd.copy(url = null, infoHash = "abc"), allow4k = true))
+        assertFalse(MoonCatSourcePolicy.suitable(uhd, allow4k = true))
+        assertFalse(MoonCatSourcePolicy.suitable(uhd.copy(url = null, infoHash = "abc"), allow4k = true))
         assertFalse(MoonCatSourcePolicy.suitable(source("English 8K", "https://example.com/8k"), allow4k = true))
-        assertTrue(MoonCatSourcePolicy.suitable(source("English 4K REMUX", "https://example.com/remux"), allow4k = true))
+        assertFalse(MoonCatSourcePolicy.suitable(source("English 4K REMUX", "https://example.com/remux"), allow4k = true))
     }
 
     @Test fun `viable torrent outranks a dead higher resolution torrent for every selection path`() {

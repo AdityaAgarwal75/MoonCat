@@ -15,15 +15,25 @@ class PlaybackPreferencesTest {
         assertFalse(PlaybackPreferences.isAnime(null, "ja", "tt123"))
     }
 
-    @Test fun `autoplay accepts sub one GB 1080p releases up to six GB`() {
-        listOf("720p 2 GB", "2160p 5 GB", "1080p 8 GB", "Unknown 2 GB", "1080p").forEach {
+    @Test fun `autoplay accepts SD HD CAM and unknown size up to six GB`() {
+        listOf("2160p 5 GB", "1080p 8 GB", "4K 1 GB").forEach {
             assertFalse(it, PlaybackPreferences.eligible(source(it).copy(infoHash = "hash")))
         }
-        listOf("1080p 250 MB", "1080p 900 MB", "1080p 1 GB", "1080p 5 GB", "1080p 6 GB").forEach {
+        listOf("720p 2 GB", "1440p 2 GB", "Unknown 2 GB", "1080p", "CAM 480p 400 MB",
+            "1080p 250 MB", "1080p 900 MB", "1080p 1 GB", "1080p 5 GB", "1080p 6 GB").forEach {
             assertTrue(it, PlaybackPreferences.eligible(source(it).copy(infoHash = "hash")))
         }
     }
 
+    @Test fun `camera only title remains eligible for autoplay`() {
+        val cam = source("Hindi CAM 480p 650 MB seeds: 80").copy(infoHash = "cam")
+        val blocked = source("Hindi WEB-DL 2160p 1 GB seeds: 9000").copy(infoHash = "4k")
+        assertEquals(listOf(cam), PlaybackPreferences.order(listOf(blocked, cam), "hi", false))
+    }
+    @Test fun `unknown size remains eligible for autoplay`() {
+        val only = source("Hindi 720p seeds: 40").copy(infoHash = "unknown-size")
+        assertEquals(listOf(only), PlaybackPreferences.order(listOf(only), "hi", false))
+    }
     @Test fun `sub one GB release remains an autoplay candidate`() {
         val small = source("Hindi 1080p 700 MB seeds: 50").copy(infoHash = "small")
         val large = source("Hindi 1080p 6.5 GB seeds: 500").copy(infoHash = "large")
@@ -34,9 +44,9 @@ class PlaybackPreferencesTest {
         val english = source("English 1080p 2 GB").copy(infoHash = "en")
         val original = source("Korean 1080p 2 GB").copy(infoHash = "ko")
         val hindi = source("Hindi 1080p 2 GB").copy(infoHash = "hi")
-        assertEquals(listOf(hindi, original), PlaybackPreferences.order(listOf(english, original, hindi), "ko", false))
+        assertEquals(listOf(hindi, original, english), PlaybackPreferences.order(listOf(english, original, hindi), "ko", false))
         assertEquals(original, PlaybackPreferences.order(listOf(english, original), "ko", false).first())
-        assertTrue(PlaybackPreferences.order(listOf(english), "ko", false).isEmpty())
+        assertEquals(listOf(english), PlaybackPreferences.order(listOf(english), "ko", false))
     }
 
     @Test fun `anime prefers English dub over Japanese and keeps Japanese fallback`() {

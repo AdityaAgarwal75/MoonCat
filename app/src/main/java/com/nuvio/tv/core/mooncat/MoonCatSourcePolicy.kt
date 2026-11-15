@@ -6,19 +6,17 @@ import com.nuvio.tv.domain.model.Stream
 object MoonCatSourcePolicy {
     const val MAX_FILE_BYTES = 100_000_000_000L
     const val USER_MAX_FILE_BYTES = PlaybackPreferences.MAX_BYTES
+    /** Discovery rejects only known UHD and files above the six GB household cap. */
     fun withinUserSizeLimit(stream: Stream): Boolean =
-        sizeBytes(stream)?.let { it in 1..USER_MAX_FILE_BYTES } ?: true
-    fun visibleSource(stream: Stream): Boolean {
-        // Manual lists include small 1080p, 720p and SD sources. Autoplay has
-        // its own 1080p policy, and both enforce the 6 GB upper size limit.
-        if (stream.isExternal()) return false
-        if (stream.serverTarget != null || stream.isYouTube()) return true
-        return suitable(stream, USER_MAX_FILE_BYTES) && withinUserSizeLimit(stream)
-    }
-    private val excluded = Regex("""(?i)((?:hd|hq)[ ._-]*cam|cam[ ._-]*rip|(?:hd|hq)[ ._-]*(?:ts|tc)|(?:ts|tc)[ ._-]*rip|p[ ._-]*dvd[ ._-]*rip|pre[ ._-]*dvd(?:rip)?|telesync|telecine|screener|\b(?:cam|scr|hdts|hdtc|ts|tc|predvd|pre-dvd|dvdscr|workprint)\b)""")
-    private val aboveHd = Regex("""(?i)(\b(?:2160|4320|1440)p\b|3840x2160|7680x4320|\b[48][ ._-]?k\b)""")
-    private val fourK = Regex("""(?i)(\b2160p\b|3840x2160|\b4[ ._-]?k\b)""")
-    private val above4k = Regex("""(?i)(\b(?:4320|1440)p\b|7680x4320|\b8[ ._-]?k\b)""")
+        sizeBytes(stream)?.let { it <= USER_MAX_FILE_BYTES } ?: true
+
+    fun visibleSource(stream: Stream): Boolean =
+        !is4k(stream) && withinUserSizeLimit(stream)
+
+    private val cameraRelease = Regex("""(?i)(\b(?:cam|hdcam|hqcam|hdts|hdtc|telesync|telecine|predvd|pre-dvd|dvdscr|workprint|screener|tsrip|tcrip)\b|(?:hd|hq)[ ._-]*(?:cam|ts|tc))""")
+    private val sub4kResolution = Regex("""(?i)(\b(?:1440|1080|720|576|540|480|360|240)p\b|\b(?:2560x1440|1920x1080|1280x720)\b)""")
+    private val fourK = Regex("""(?i)(\b2160p\b|\b(?:3840|4096)\s*[x×]\s*2160\b|\b4[ ._-]?k\b)""")
+    private val above4k = Regex("""(?i)(\b(?:4320|2880)p\b|\b7680\s*[x×]\s*4320\b|\b8[ ._-]?k\b)""")
     private val sizePattern = Regex("(?i)(\\d+(?:\\.\\d+)?)\\s*(GiB|GB|MiB|MB)\\b")
     private val ultraHd = Regex("""(?i)\b(?:uhd|ultra[ ._-]*hd)\b""")
     private val cleanRelease = Regex("""(?i)\b(?:web[ ._-]?dl|blu[ ._-]?ray|b[dr]rip)\b""")
@@ -37,9 +35,9 @@ object MoonCatSourcePolicy {
         stream.clientResolve?.stream?.raw?.parsed?.resolution,
         stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
-    fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize
-        ?: stream.clientResolve?.stream?.raw?.size
-        ?: stream.debridCacheStatus?.cachedSize
+    fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize?.takeIf { it > 0L }
+        ?: stream.clientResolve?.stream?.raw?.size?.takeIf { it > 0L }
+        ?: stream.debridCacheStatus?.cachedSize?.takeIf { it > 0L }
         ?: sizePattern.find(text(stream))?.let {
             val multiplier = when (it.groupValues[2].lowercase()) {
                 "gib" -> 1_073_741_824.0
@@ -50,24 +48,13 @@ object MoonCatSourcePolicy {
             (it.groupValues[1].toDouble() * multiplier).toLong()
         }
 
-    fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES, allow4k: Boolean = false): Boolean {
-        val limit = maxFileBytes
-        val label = text(stream)
-        val isUltra = is4k(stream)
-        val permitsUltra = allow4k && isUltra && !above4k.containsMatchIn(label)
-        val unknownUltraHd = qualityTier(stream) == 3 && ultraHd.containsMatchIn(label)
-        return stream.qualityValue <= (if (permitsUltra) 2160 else 1080) &&
-            (permitsUltra || !aboveHd.containsMatchIn(label)) && !unknownUltraHd &&
-            !excluded.containsMatchIn(label) && (sizeBytes(stream)?.let { it in 1..limit } ?: true)
-    }
+    /** Legacy 4K parameter kept for API compatibility; explicit 4K is always blocked. */
+    @Suppress("UNUSED_PARAMETER")
+    fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES, allow4k: Boolean = false): Boolean =
+        visibleSource(stream) && (sizeBytes(stream)?.let { it <= maxFileBytes } ?: true)
 
-    /** Explicit language inspection caps resolution only; release names/size never hide a dub. */
-    fun canInspectAudio(stream: Stream, allow4k: Boolean = false): Boolean {
-        val label = text(stream)
-        val exceeds4k = Regex("""(?i)(\b4320p\b|7680x4320|\b8[ ._-]?k\b)""").containsMatchIn(label)
-        return if (allow4k) stream.qualityValue <= 2160 && !exceeds4k
-            else stream.qualityValue <= 1080 && !aboveHd.containsMatchIn(label) && !(qualityTier(stream) == 3 && ultraHd.containsMatchIn(label))
-    }
+    @Suppress("UNUSED_PARAMETER")
+    fun canInspectAudio(stream: Stream, allow4k: Boolean = false): Boolean = visibleSource(stream)
 
     /** Unlike autoplay ranking this retains large HD files and imperfect release descriptions. */
     fun audioInspectionCandidates(streams: List<Stream>, language: String): List<Stream> =
@@ -80,7 +67,7 @@ object MoonCatSourcePolicy {
     fun reusableRelease(name: String, filename: String?, size: Long?, preferredLanguage: String, maxFileBytes: Long): Boolean {
         val cached = Stream(name = name, title = filename, description = null, url = null, ytId = null,
             infoHash = null, fileIdx = null, externalUrl = null, behaviorHints = null, addonName = "Cached", addonLogo = null)
-        return suitable(cached, maxFileBytes) && (size == null || size in 1..maxFileBytes) &&
+        return suitable(cached, maxFileBytes) && (size == null || size in 1..minOf(maxFileBytes, USER_MAX_FILE_BYTES)) &&
             advertisesAudio(cached, normalizeLanguage(preferredLanguage) ?: "hi")
     }
 
@@ -114,13 +101,20 @@ object MoonCatSourcePolicy {
     }
 
     fun is4kLabel(label: String): Boolean = fourK.containsMatchIn(label)
-    fun is4k(stream: Stream): Boolean = stream.qualityValue == 2160 || is4kLabel(text(stream))
+    fun is4k(stream: Stream): Boolean {
+        val label = text(stream)
+        return stream.qualityValue >= 2160 ||
+            fourK.containsMatchIn(label) || above4k.containsMatchIn(label) ||
+            (ultraHd.containsMatchIn(label) && stream.qualityValue !in 1..2159 &&
+                !sub4kResolution.containsMatchIn(label))
+    }
 
     fun qualityTier(stream: Stream): Int {
         val description = text(stream)
         return when {
             is4k(stream) -> -1
             stream.qualityValue == 1080 || fullHdResolution.containsMatchIn(description) -> 0
+            stream.qualityValue in 1081..2159 || Regex("""(?i)\b1440p\b""").containsMatchIn(description) -> 1
             stream.qualityValue == 720 || hdResolution.containsMatchIn(description) -> 1
             stream.qualityValue in 1..719 || sdResolution.containsMatchIn(description) -> 2
             else -> 3
@@ -189,7 +183,7 @@ object MoonCatSourcePolicy {
     private data class Ranked(
         val stream: Stream, val language: Int, val availability: Int,
         val torrentSeeders: Int, val quality: Int, val seeders: Int,
-        val release: Int, val size: Long
+        val camera: Int, val release: Int, val size: Long
     )
 
     fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
@@ -208,8 +202,10 @@ object MoonCatSourcePolicy {
             Ranked(stream, if (language == null) 0 else languageTier(stream, language),
                 if (!torrent || (seeds != null && seeds > 0)) 0 else if (seeds == null) 1 else 2,
                 if (torrent) seeds ?: 0 else 0, qualityTier(stream), seeds ?: 0,
+                if (cameraRelease.containsMatchIn(text(stream))) 1 else 0,
                 releaseTier(stream), sizeBytes(stream) ?: Long.MAX_VALUE)
         }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.availability }
+            .thenBy { it.camera }
             .thenBy { if (it.quality in 0..1) 0 else it.quality }
             .thenByDescending { it.torrentSeeders }.thenBy { it.quality }
             .thenByDescending { it.seeders }.thenBy { it.release }.thenBy { it.size })

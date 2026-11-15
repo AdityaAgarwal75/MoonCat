@@ -10,9 +10,9 @@ class MoonCatStreamProvidersTest {
         baseUrl = url, catalogs = emptyList(), types = emptyList(), resources = emptyList()
     )
 
-    @Test fun `configured addons are accepted while TorrentsDB stays excluded`() {
+    @Test fun `all configured secure addons are considered including TorrentsDB`() {
         assertTrue(MoonCatStreamProviders.isAllowed(addon("com.stremio.torrentio", "https://torrentio.strem.fun/sort=seeders")))
-        assertFalse(MoonCatStreamProviders.isAllowed(addon("db", "https://torrentsdb.com/config")))
+        assertTrue(MoonCatStreamProviders.isAllowed(addon("db", "https://torrentsdb.com/config")))
         assertTrue(MoonCatStreamProviders.isAllowed(addon("other", "https://torrentsdb.com.attacker.example")))
         assertTrue(MoonCatStreamProviders.isAllowed(addon("other", "https://comet.elfhosted.com")))
         assertTrue(MoonCatStreamProviders.isAllowed(addon("custom", "https://my-addon.example/config")))

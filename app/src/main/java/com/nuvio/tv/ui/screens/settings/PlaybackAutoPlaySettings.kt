@@ -139,13 +139,6 @@ internal fun PlaybackStreamSelectionSection(
         }
     }
 
-    SettingsToggleRow(
-        title = "Allow 4K sources",
-        subtitle = "Requires a 4K-capable device. Direct links and torrents must respond before autoplay.",
-        checked = settings.allow4kWhenFast,
-        onToggle = { onUpdate { setAllow4kWhenFast(!settings.allow4kWhenFast) } }
-    )
-
     val timeoutSeconds = settings.streamAutoPlayTimeoutSeconds
     SliderSettingsItem(
         title = stringResource(R.string.autoplay_timeout_title),

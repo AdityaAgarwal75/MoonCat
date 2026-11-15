@@ -1,19 +1,10 @@
-# MoonCat 3.0.0-alpha.2 candidate
+# MoonCat 3.0.0-alpha.3 — broader source availability and fast failover
 
-The existing TV screens, navigation, artwork, package identity and playback engines remain. This candidate rebuilds source-selection and recovery ownership around the latest Beta17/audit source, rather than the older Beta15 on main.
-
-- Manual source list: show valid 1080p, 720p and SD addon sources, including files below 1 GB, while keeping the 6 GB (decimal) maximum for known sizes. 4K, camera and above-6-GB sources remain excluded. Sources with unknown size can remain visible for manual selection.
-- Autoplay: permit 1080p releases of any positive known size through 6 GB, including sub-1 GB files. The 1080p preference remains unchanged; 720p and SD files remain available manually.
-- Hindi audio first for movies and series, then the known original language. Anime prefers Hindi, English, then original. Both source ranking and default container track choice use this policy; explicit manual audio choices retain precedence. Recognize anime IDs even before genres load.
-- One ranking policy handles initial play, next episode and recovery. A torrent advertised with zero seeds is demoted so dead dubbed entries cannot consume every retry before a viable original-language option.
-- Interactive addon searches have an8-second total budget including queue/retry. Initial/next-episode source search has a10-second ceiling; native torrent preparation is bounded to10seconds. These stage limits are not a guarantee of a10-second click-to-first-frame time.
-- Recovery owns resolver/native/player initialization jobs until they finish, retains failures during preparation, limits retries, and preserves the playhead. Manual choices invalidate pending recovery. Releasing the player cancels old watchdogs and initialization.
-- All installed compatible secure providers may respond concurrently. Torrentio remains supported; no unverified extra provider is installed.
-
-Native personal-media and YouTube adapters negotiate formats separately and currently bypass addon metadata filtering; verify their format constraints independently. Source labels do not prove a dub or speed. Physical FireTV startup, sustained playback, audio and remote navigation need testing before stable promotion.
-
-## Installation and signing
-Version30001 /3.0.0-alpha.2 retains dev.mooncat.tv.v2 and the existing v2 signing configuration. The version number does not require renaming the package. The V3 branch workflow uploads a validated signed candidate if trusted signing secrets exist, otherwise an isolated dev.mooncat.tv.v2.preview build. Do not uninstall a working app to sideload a differently signed update. A successful signed V3 branch build can publish a prerelease update.
-
-## Audit evidence
-See V3-SOURCE-INVENTORY.csv for the source inventory, the design and plan under docs/superpowers, and the validation ledger in V3-VALIDATION.md. Whole-tree structural inventory is separate from the deeper playback-path review. This is a candidate, not a claim that every feature has been exercised on a TV.
+- Manual discovery shows every returned source except known 4K-or-higher streams and files with known size exceeding 6,000,000,000 bytes. CAM, telesync, screener, PreDVD, SD, 720p, 1440p, unknown-size, and other releases are no longer removed. External watch links can appear manually but are not autoplayed as files.
+- 4K stays blocked even if a previously stored opt-in setting existed; the now-misleading 4K toggle was removed.
+- All enabled compatible HTTPS providers, including configured TorrentsDB instances, are eligible for discovery; actual provider health and availability are independent.
+- Autoplay and failure recovery consider every eligible non-4K source under the 6 GB cap. Highest advertised peer/seeder counts guide ranking among otherwise suitable files; clean releases are preferred to CAM when both exist, while CAM-only titles remain playable.
+- Hindi/original-language preferences influence ranking rather than suppressing all alternatives. Playback retains first-stream fast start, native engine preparation, source failure recovery and Fire TV memory protections.
+- Known-size and resolution metadata can be wrong or absent; actual decoder compatibility and sustained throughput are not guaranteed by labels or peer counts. Start in 1–2 seconds is a target, not a guarantee for torrents.
+- Version code 30002, package `dev.mooncat.tv.v2` and trusted V2 signature remain unchanged when release signing is available. If signing secrets are absent, CI produces an isolated Preview APK rather than a misleading in-place update.
+- Regression tests cover CAM-only autoplay, file size and resolution boundaries, unknown-size files, 4K opt-in overrides, provider gating and availability ranking. Physical Fire TV startup and buffering still require device testing.
