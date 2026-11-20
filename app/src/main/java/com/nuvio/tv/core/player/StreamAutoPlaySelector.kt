@@ -37,7 +37,7 @@ object StreamAutoPlaySelector {
         return directDebridEntries + orderedAddons + pluginEntries
     }
 
-    private fun isPlayable(stream: Stream): Boolean {
+    internal fun hasPlayableRoute(stream: Stream): Boolean {
         // External URL streams (e.g. error pages, web links) are not playable.
         if (stream.isExternal()) return false
         if (stream.serverTarget != null) return true
@@ -45,7 +45,7 @@ object StreamAutoPlaySelector {
         if (stream.getStreamUrl() != null) return true
         // Uncached on a debrid service does not mean unavailable to the local
         // torrent engine. Readiness is verified separately by its bounded race.
-        if (stream.isTorrent()) return true
+        if (stream.isTorrent()) return stream.getEffectiveInfoHash() != null
         when (stream.debridCacheStatus?.state) {
             StreamDebridCacheState.CHECKING,
             StreamDebridCacheState.NOT_CACHED,
@@ -60,6 +60,25 @@ object StreamAutoPlaySelector {
     }
 
 
+
+    internal fun selectEpisodeFilenameMatch(
+        streams: List<Stream>,
+        filename: String,
+        originalLanguage: String?,
+        anime: Boolean,
+        requiredBingeGroup: String? = null
+    ): Stream? {
+        val ranked = PlaybackPreferences.order(streams.filter(::hasPlayableRoute), originalLanguage, anime)
+        val first = ranked.firstOrNull() ?: return null
+        val bestLanguage = PlaybackPreferences.languageTier(first, originalLanguage, anime)
+        val hasViableSource = MoonCatSourcePolicy.availabilityTier(first) != 2
+        return ranked.firstOrNull { stream ->
+            (requiredBingeGroup == null || stream.behaviorHints?.bingeGroup == requiredBingeGroup) &&
+                FilenameEpisodeMatcher.matches(stream.behaviorHints?.filename, filename) &&
+                (!hasViableSource || MoonCatSourcePolicy.availabilityTier(stream) != 2) &&
+                PlaybackPreferences.languageTier(stream, originalLanguage, anime) == bestLanguage
+        }
+    }
 
     fun selectAutoPlayStream(
         streams: List<Stream>,
@@ -122,7 +141,7 @@ object StreamAutoPlaySelector {
         if (!canReuseBingeGroup && (bingeGroupOnly || mode == StreamAutoPlayMode.MANUAL)) return emptyList()
 
         val candidateStreams = rank(sourceScopedStreams.filter { stream ->
-            isPlayable(stream) && when {
+            hasPlayableRoute(stream) && when {
                 stream.serverTarget != null -> true
                 stream.addonName in installedAddonNames ->
                     selectedAddons.isEmpty() || stream.addonName in selectedAddons
@@ -139,7 +158,7 @@ object StreamAutoPlaySelector {
                 candidateStreams.firstOrNull()?.let { MoonCatSourcePolicy.availabilityTier(it) != 2 } == true
             val bingeGroupMatch = rank(streams.filter { stream ->
                 stream.behaviorHints?.bingeGroup == targetBingeGroup &&
-                    isPlayable(stream) &&
+                    hasPlayableRoute(stream) &&
                     (bestLanguage == null || languageTier(stream) == bestLanguage) &&
                     (!hasViableCandidate || MoonCatSourcePolicy.availabilityTier(stream) != 2)
             }).firstOrNull()

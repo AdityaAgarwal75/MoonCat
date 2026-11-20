@@ -130,8 +130,7 @@ class StreamScreenViewModel @Inject constructor(
             isLoading = !exhausted, isDirectAutoPlayFlow = !exhausted,
             showDirectAutoPlayOverlay = !exhausted,
             playbackErrorMessage = if (exhausted) "Available sources could not be resolved. Retry or choose another source." else null) }
-        if (exhausted) return
-        loadStreams()
+        if (!exhausted || (!streamLoadCompleted && streamLoadJob == null)) loadStreams()
     }
 
     private var directAutoPlayModeInitializedForSession = false
@@ -566,7 +565,13 @@ class StreamScreenViewModel @Inject constructor(
                 val embeddedAddonStreams = withTimeoutOrNull((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(1L)) {
                     getEmbeddedStreamsFromMeta()
                 }
-                if (embeddedAddonStreams != null && embeddedAddonStreams.streams.any(MoonCatSourcePolicy::visibleSource)) {
+                if (embeddedAddonStreams != null && embeddedAddonStreams.streams.any { stream ->
+                    MoonCatSourcePolicy.visibleSource(stream) &&
+                        (StreamAutoPlaySelector.hasPlayableRoute(stream) || stream.isExternal() ||
+                            stream.youTubeIdToResolve() != null) &&
+                        (autoPlayHandledForSession || failedAutoPlayIdentities.isEmpty() ||
+                            autoPlayIdentity(stream) !in failedAutoPlayIdentities)
+                }) {
                     Log.d(
                         TAG,
                         "Using embedded video streams for videoId=$videoId count=${embeddedAddonStreams.streams.size}"

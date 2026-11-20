@@ -1,6 +1,5 @@
 package com.nuvio.tv.data.repository
 
-import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
 import com.nuvio.tv.domain.model.Stream
 
 /**
@@ -48,11 +47,11 @@ internal fun applyDiscoveryAvailability(
 ): List<Stream> {
     val originalByKey = original.associateBy { it.discoveryIdentity() }
     val checkedByKey = checked.associateBy { it.discoveryIdentity() }
-    return current.mapNotNull { stream ->
+    return current.map { stream ->
         val key = stream.discoveryIdentity()
-        if (stream != originalByKey[key]) return@mapNotNull stream
-        val status = checkedByKey[key]?.debridCacheStatus ?: return@mapNotNull stream
-        if (status == stream.debridCacheStatus) return@mapNotNull stream
-        stream.copy(debridCacheStatus = status).takeIf(MoonCatSourcePolicy::visibleSource)
+        if (stream != originalByKey[key]) return@map stream
+        val status = checkedByKey[key]?.debridCacheStatus ?: return@map stream
+        if (status == stream.debridCacheStatus) return@map stream
+        stream.copy(debridCacheStatus = status)
     }
 }

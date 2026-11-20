@@ -398,9 +398,7 @@ class StreamRepositoryImpl @Inject constructor(
                             val current = accumulatedResults[index]
                             val updated = applyDiscoveryAvailability(current.streams, result.streams, checkedResult.streams)
                             if (updated == current.streams) return@withLock
-                            if (updated.size < current.streams.size) hadExcludedSources = true
-                            if (updated.isEmpty()) accumulatedResults.removeAt(index)
-                            else accumulatedResults[index] = current.copy(streams = updated)
+                            accumulatedResults[index] = current.copy(streams = updated)
                             send(NetworkResult.Success(accumulatedResults.toList()))
                         }
                     }

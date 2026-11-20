@@ -36,11 +36,11 @@ object MoonCatSourcePolicy {
         stream.clientResolve?.stream?.raw?.parsed?.resolution,
         stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
+    // Debrid availability is checked by hash, so its size can describe a whole season pack.
     fun sizeBytes(stream: Stream): Long? = sizeBytes(stream) { text(stream) }
 
     private inline fun sizeBytes(stream: Stream, label: () -> String): Long? = stream.behaviorHints?.videoSize?.takeIf { it > 0L }
         ?: stream.clientResolve?.stream?.raw?.size?.takeIf { it > 0L }
-        ?: stream.debridCacheStatus?.cachedSize?.takeIf { it > 0L }
         ?: sizePattern.find(label())?.let {
             val multiplier = when (it.groupValues[2].lowercase()) {
                 "gib" -> 1_073_741_824.0

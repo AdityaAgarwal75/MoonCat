@@ -30,6 +30,12 @@ class StreamAutoPlaySelectorTest {
         assertEquals(playable, selectV3(listOf(broken, playable)))
     }
 
+    @Test fun `metadata with a malformed torrent route cannot win autoplay`() {
+        val broken = stream("Torrentio", name = "Hindi 1080p", url = "torrent://missing-hash")
+        val playable = stream("Torrentio", name = "English 720p", url = "https://example.com/play.mkv")
+        assertEquals(playable, selectV3(listOf(broken, playable)))
+    }
+
     @Test fun `blank URL does not hide a playable torrent route`() {
         val torrent = stream("Torrentio", name = "Hindi 1080p", url = "", infoHash = "swarm")
         assertNull(torrent.getStreamUrl())
@@ -42,6 +48,15 @@ class StreamAutoPlaySelectorTest {
         val healthy = stream("Torrentio", name = "Hindi 720p seeds: 200", infoHash = "healthy")
         assertEquals(healthy, selectV3(listOf(dead, healthy), bingeGroup = "saved"))
         assertEquals(dead, selectV3(listOf(dead), bingeGroup = "saved"))
+    }
+
+    @Test fun `saved episode filename skips a broken copy and chooses a playable mirror`() {
+        val filename = "Show.S05E02.mkv"
+        val invalid = stream("Torrentio", name = "Hindi 1080p", url = " ", filename = filename)
+        val valid = stream("Torrentio", name = "English 720p", url = "https://example.com/s05e02.mkv", filename = filename)
+        assertEquals(valid, StreamAutoPlaySelector.selectEpisodeFilenameMatch(
+            listOf(invalid, valid), filename, "en", anime = false
+        ))
     }
 
     @Test fun `regex exclusions retain the scope the user wrote`() {
@@ -399,6 +414,7 @@ class StreamAutoPlaySelectorTest {
         url: String? = null,
         name: String? = null,
         bingeGroup: String? = null,
+        filename: String? = null,
         infoHash: String? = null,
         cacheState: StreamDebridCacheState? = null,
         ytId: String? = null,
@@ -416,7 +432,8 @@ class StreamAutoPlaySelectorTest {
             notWebReady = null,
             bingeGroup = bingeGroup,
             countryWhitelist = null,
-            proxyHeaders = null
+            proxyHeaders = null,
+            filename = filename
         ),
         addonName = addonName,
         addonLogo = null,

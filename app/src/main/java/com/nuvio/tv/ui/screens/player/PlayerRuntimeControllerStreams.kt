@@ -1951,106 +1951,55 @@ internal fun PlayerRuntimeController.playNextEpisode(userInitiated: Boolean = fa
             // finishes, so the waiting code below resumes without polling.
             val searchSettled = CompletableDeferred<Unit>()
 
-            fun trySelectStream(data: List<AddonStreams>): Stream? {
-                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                val allStreams = orderedStreams.flatMap { it.streams }.filter {
-                    com.nuvio.tv.core.mooncat.PlaybackPreferences.eligible(it)
-                }
-                return StreamAutoPlaySelector.selectAutoPlayStream(
-                    usePlaybackPreferences = true, originalLanguage = contentLanguage,
-                    anime = com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId),
-                    preferredAudioLanguage = playerSettings.preferredAudioLanguage,
-                    streams = com.nuvio.tv.core.mooncat.PlaybackPreferences.order(
-                        allStreams, contentLanguage, com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId)),
-                    mode = effectiveMode,
-                    regexPattern = effectiveRegex,
-                    source = effectiveSource,
-                    installedAddonNames = installedAddonOrder.toSet(),
-                    selectedAddons = effectiveSelectedAddons,
-                    selectedPlugins = effectiveSelectedPlugins,
-                    preferredBingeGroup = if (playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode) {
-                        currentStreamBingeGroup
-                    } else {
-                        null
-                    },
-                    preferBingeGroupInSelection = playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode,
-                    bingeGroupOnly = bingeGroupOnlyManualMode
-                )
-            }
+            val installedAddonNames = installedAddonOrder.toSet()
+            val anime = com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(
+                metaGenres.joinToString(), contentLanguage, nextVideo.id
+            )
+            val nextFilename = com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
+                filename = currentFilename.orEmpty(),
+                currentSeason = _uiState.value.currentSeason,
+                currentEpisode = _uiState.value.currentEpisode ?: 0,
+                nextSeason = nextVideo.season,
+                nextEpisode = nextVideo.episode ?: 0
+            ) ?: currentFilename?.takeIf { it.isNotBlank() }
 
-            fun tryBingeGroupOnly(data: List<AddonStreams>): Stream? {
-                if (currentStreamBingeGroup == null || !playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode) return null
-                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                val allStreams = com.nuvio.tv.core.mooncat.PlaybackPreferences.order(
-                    orderedStreams.flatMap { it.streams }, contentLanguage,
-                    com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId))
-                val bestLanguage = allStreams.firstOrNull()?.let {
-                    com.nuvio.tv.core.mooncat.PlaybackPreferences.languageTier(it, contentLanguage,
-                        com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId))
-                }
-                // Early: binge group + filename match (most precise)
-                val nextFilename = com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
-                    filename = currentFilename.orEmpty(),
-                    currentSeason = _uiState.value.currentSeason,
-                    currentEpisode = _uiState.value.currentEpisode ?: 0,
-                    nextSeason = nextVideo.season,
-                    nextEpisode = nextVideo.episode ?: 0
-                ) ?: currentFilename?.takeIf { it.isNotBlank() }
-                if (nextFilename != null) {
-                    val bingeAndFilename = allStreams.firstOrNull { stream ->
-                        !stream.isExternal() &&
-                        com.nuvio.tv.core.mooncat.PlaybackPreferences.languageTier(stream, contentLanguage,
-                            com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId)) == bestLanguage &&
-                            stream.behaviorHints?.bingeGroup == currentStreamBingeGroup &&
-                            com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(
-                                stream.behaviorHints?.filename, nextFilename
-                            )
-                    }
-                    if (bingeAndFilename != null) return bingeAndFilename
-                }
-                // Early fallback: binge group alone
-                return StreamAutoPlaySelector.selectAutoPlayStream(
-                    usePlaybackPreferences = true, originalLanguage = contentLanguage,
-                    anime = com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId),
-                    preferredAudioLanguage = playerSettings.preferredAudioLanguage,
-                    streams = com.nuvio.tv.core.mooncat.PlaybackPreferences.order(
-                        allStreams, contentLanguage, com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId)),
+            fun discoveryStreams(data: List<AddonStreams>): List<Stream> =
+                StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
+                    .flatMap { it.streams }
+
+            fun selectStream(streams: List<Stream>, bingeGroupOnly: Boolean): Stream? =
+                StreamAutoPlaySelector.selectAutoPlayStream(
+                    streams = streams,
                     mode = effectiveMode,
                     regexPattern = effectiveRegex,
                     source = effectiveSource,
-                    installedAddonNames = installedAddonOrder.toSet(),
+                    installedAddonNames = installedAddonNames,
                     selectedAddons = effectiveSelectedAddons,
                     selectedPlugins = effectiveSelectedPlugins,
                     preferredBingeGroup = currentStreamBingeGroup,
-                    preferBingeGroupInSelection = true,
-                    bingeGroupOnly = true
+                    preferBingeGroupInSelection = playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode,
+                    bingeGroupOnly = bingeGroupOnly,
+                    preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                    originalLanguage = contentLanguage,
+                    anime = anime,
+                    usePlaybackPreferences = true
                 )
+
+            fun trySelectStream(data: List<AddonStreams>): Stream? =
+                selectStream(discoveryStreams(data), bingeGroupOnly = bingeGroupOnlyManualMode)
+
+            fun tryBingeGroupOnly(data: List<AddonStreams>): Stream? {
+                val group = currentStreamBingeGroup ?: return null
+                if (!playerSettings.streamAutoPlayPreferBingeGroupForNextEpisode) return null
+                val streams = discoveryStreams(data)
+                val matchingFilename = nextFilename?.let {
+                    StreamAutoPlaySelector.selectEpisodeFilenameMatch(streams, it, contentLanguage, anime, group)
+                }
+                return matchingFilename ?: selectStream(streams, bingeGroupOnly = true)
             }
 
-            fun tryFilenameOnly(data: List<AddonStreams>): Stream? {
-                val nextFilename = com.nuvio.tv.core.player.FilenameEpisodeMatcher.buildNextFilename(
-                    filename = currentFilename.orEmpty(),
-                    currentSeason = _uiState.value.currentSeason,
-                    currentEpisode = _uiState.value.currentEpisode ?: 0,
-                    nextSeason = nextVideo.season,
-                    nextEpisode = nextVideo.episode ?: 0
-                ) ?: currentFilename?.takeIf { it.isNotBlank() }
-                    ?: return null
-                val orderedStreams = StreamAutoPlaySelector.orderAddonStreams(data, installedAddonOrder, preferredServerNames)
-                val anime = com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId)
-                val ranked = com.nuvio.tv.core.mooncat.PlaybackPreferences.order(
-                    orderedStreams.flatMap { it.streams }, contentLanguage, anime)
-                val bestLanguage = ranked.firstOrNull()?.let {
-                    com.nuvio.tv.core.mooncat.PlaybackPreferences.languageTier(it, contentLanguage, anime)
-                }
-                return ranked.firstOrNull { stream ->
-                    !stream.isExternal() &&
-                        com.nuvio.tv.core.mooncat.PlaybackPreferences.languageTier(stream, contentLanguage,
-                            com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(metaGenres.joinToString(), contentLanguage, currentVideoId)) == bestLanguage &&
-                        com.nuvio.tv.core.player.FilenameEpisodeMatcher.matches(
-                            stream.behaviorHints?.filename, nextFilename
-                        )
-                }
+            fun tryFilenameOnly(data: List<AddonStreams>): Stream? = nextFilename?.let {
+                StreamAutoPlaySelector.selectEpisodeFilenameMatch(discoveryStreams(data), it, contentLanguage, anime)
             }
 
             fun recordSelection(candidate: Stream) {

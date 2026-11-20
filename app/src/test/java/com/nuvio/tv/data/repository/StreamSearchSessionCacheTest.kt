@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.repository
 
+import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.AddonStreams
 import com.nuvio.tv.domain.model.Stream
@@ -58,9 +59,11 @@ class StreamSearchSessionCacheTest {
     }
 
     @Test
-    fun `availability with a newly known oversized file removes the source`() {
+    fun `availability size for an entire pack does not hide the selected episode`() {
         val checked = source.copy(debridCacheStatus = cachedStatus(7_000_000_000L))
-        assertEquals(emptyList<Stream>(), applyDiscoveryAvailability(listOf(source), listOf(source), listOf(checked)))
+        assertEquals(listOf(checked), applyDiscoveryAvailability(listOf(source), listOf(source), listOf(checked)))
+        assertTrue(MoonCatSourcePolicy.visibleSource(checked))
+        assertNull(MoonCatSourcePolicy.sizeBytes(checked))
     }
 
     private fun cachedStatus(size: Long) =
