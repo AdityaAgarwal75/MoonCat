@@ -24,6 +24,46 @@ class StreamAutoPlaySelectorTest {
     }
 
 
+    @Test fun `metadata with blank URL cannot win autoplay`() {
+        val broken = stream("Torrentio", name = "Hindi 1080p", url = " ")
+        val playable = stream("Torrentio", name = "English 720p", url = "https://example.com/play.mkv")
+        assertEquals(playable, selectV3(listOf(broken, playable)))
+    }
+
+    @Test fun `blank URL does not hide a playable torrent route`() {
+        val torrent = stream("Torrentio", name = "Hindi 1080p", url = "", infoHash = "swarm")
+        assertNull(torrent.getStreamUrl())
+        assertEquals(true, torrent.isTorrent())
+        assertEquals(torrent, selectV3(listOf(torrent)))
+    }
+
+    @Test fun `zero seeder binge group does not start before a viable stream`() {
+        val dead = stream("Torrentio", name = "Hindi 1080p seeds: 0", infoHash = "dead", bingeGroup = "saved")
+        val healthy = stream("Torrentio", name = "Hindi 720p seeds: 200", infoHash = "healthy")
+        assertEquals(healthy, selectV3(listOf(dead, healthy), bingeGroup = "saved"))
+        assertEquals(dead, selectV3(listOf(dead), bingeGroup = "saved"))
+    }
+
+    @Test fun `regex exclusions retain the scope the user wrote`() {
+        val event = stream("Torrentio", name = "Movie 1080p", url = "https://example.com/bar.mkv")
+        assertEquals(event, selectV3(listOf(event), regex = "^(?!Torrentio (x265|bar)).*1080p"))
+    }
+
+    private fun selectV3(streams: List<Stream>, bingeGroup: String? = null, regex: String = ""): Stream? =
+        StreamAutoPlaySelector.selectAutoPlayStream(
+            streams = streams,
+            mode = if (regex.isBlank()) StreamAutoPlayMode.FIRST_STREAM else StreamAutoPlayMode.REGEX_MATCH,
+            regexPattern = regex,
+            source = StreamAutoPlaySource.ALL_SOURCES,
+            installedAddonNames = setOf("Torrentio"),
+            selectedAddons = emptySet(),
+            selectedPlugins = emptySet(),
+            preferredBingeGroup = bingeGroup,
+            preferBingeGroupInSelection = bingeGroup != null,
+            originalLanguage = "en",
+            usePlaybackPreferences = true
+        )
+
     @Test
     fun `orderAddonStreams follows installed addon order and leaves plugins last`() {
         val plugin = addonStreams("Plugin")

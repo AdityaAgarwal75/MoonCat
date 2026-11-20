@@ -1,10 +1,7 @@
-# MoonCat 3.0.0-alpha.3 — broader source availability and fast failover
+# MoonCat 3.0.0-alpha.4
 
-- Manual discovery shows every returned source except known 4K-or-higher streams and files with known size exceeding 6,000,000,000 bytes. CAM, telesync, screener, PreDVD, SD, 720p, 1440p, unknown-size, and other releases are no longer removed. External watch links can appear manually but are not autoplayed as files.
-- 4K stays blocked even if a previously stored opt-in setting existed; the now-misleading 4K toggle was removed.
-- All enabled compatible HTTPS providers, including configured TorrentsDB instances, are eligible for discovery; actual provider health and availability are independent.
-- Autoplay and failure recovery consider every eligible non-4K source under the 6 GB cap. Highest advertised peer/seeder counts guide ranking among otherwise suitable files; clean releases are preferred to CAM when both exist, while CAM-only titles remain playable.
-- Hindi/original-language preferences influence ranking rather than suppressing all alternatives. Playback retains first-stream fast start, native engine preparation, source failure recovery and Fire TV memory protections.
-- Known-size and resolution metadata can be wrong or absent; actual decoder compatibility and sustained throughput are not guaranteed by labels or peer counts. Start in 1–2 seconds is a target, not a guarantee for torrents.
-- Version code 30002, package `dev.mooncat.tv.v2` and trusted V2 signature remain unchanged when release signing is available. If signing secrets are absent, CI produces an isolated Preview APK rather than a misleading in-place update.
-- Regression tests cover CAM-only autoplay, file size and resolution boundaries, unknown-size files, 4K opt-in overrides, provider gating and availability ranking. Physical Fire TV startup and buffering still require device testing.
+- Autoplay rejects blank stream links and can still use the torrent route when an addon supplies an info hash. Manual fallback remains available when a source fails to resolve.
+- Autoplay preserves a playable saved release group for the next episode. A saved torrent reporting zero seeders yields to a viable alternative. Custom regex rules use the pattern exactly as written.
+- Torrentio enters the bounded discovery queue first. Results from other configured providers still appear as they arrive. Discovery reports when the returned files are 4K or over 6 GB and does not restore files that later prove oversized.
+- The source screen ranks provider results once for autoplay and applies badges in batches. Badge updates keep the latest source metadata and avoid rebuilding the whole list for every few results.
+- Version code 30003 retains package `dev.mooncat.tv.v2` and the trusted signing identity for in-place updates.

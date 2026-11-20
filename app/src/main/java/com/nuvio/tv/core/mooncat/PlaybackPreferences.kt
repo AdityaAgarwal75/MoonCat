@@ -22,16 +22,10 @@ object PlaybackPreferences {
             else listOfNotNull("hi", original)).distinct()
     }
 
-    fun languageTier(stream: Stream, originalLanguage: String?, anime: Boolean): Int {
-        val languages = audioLanguages(originalLanguage, anime)
-        val hints = MoonCatSourcePolicy.languageHints(stream)
-        return languages.indexOfFirst { it in hints }.takeIf { it >= 0 }
-            ?: if (hints.isEmpty()) languages.size else languages.size + 1
-    }
+    fun languageTier(stream: Stream, originalLanguage: String?, anime: Boolean): Int =
+        MoonCatSourcePolicy.languageTier(stream, audioLanguages(originalLanguage, anime))
 
     /** Language hints rank available sources; they must never discard the only playable file. */
     fun order(streams: List<Stream>, originalLanguage: String?, anime: Boolean): List<Stream> =
-        MoonCatSourcePolicy.rank(streams.filter(::eligible))
-            .sortedWith(compareBy<Stream> { if (MoonCatSourcePolicy.availabilityTier(it) == 2) 1 else 0 }
-                .thenBy { languageTier(it, originalLanguage, anime) })
+        MoonCatSourcePolicy.rankForPlayback(streams, audioLanguages(originalLanguage, anime))
 }

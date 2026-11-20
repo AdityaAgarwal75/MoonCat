@@ -2,6 +2,9 @@ package com.nuvio.tv.data.repository
 
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.domain.model.AddonStreams
+import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.model.StreamDebridCacheState
+import com.nuvio.tv.domain.model.StreamDebridCacheStatus
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -20,7 +23,48 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class StreamSearchSessionCacheTest {
     private val key = StreamSearchRequestKey(1, "movie", "tt1", null, null, "config")
-    private val success = NetworkResult.Success(listOf(AddonStreams("source", null, emptyList())))
+    private val source = Stream(
+        name = "1080p",
+        title = null,
+        description = null,
+        url = null,
+        ytId = null,
+        infoHash = "swarm",
+        fileIdx = 0,
+        externalUrl = null,
+        behaviorHints = null,
+        addonName = "source",
+        addonLogo = null
+    )
+    private val success = NetworkResult.Success(listOf(AddonStreams("source", null, listOf(source))))
+
+    @Test
+    fun `retracted source is not restored after discovery reports an error`() = runTest {
+        val cache = StreamSearchSessionCache(backgroundScope)
+        val error = NetworkResult.Error("Source exceeded the size limit")
+        val results = async {
+            cache.observe(key, false) { flowOf(success, NetworkResult.Success(emptyList()), error) }.toList()
+        }
+        runCurrent()
+        assertEquals(error, results.await().last())
+        assertNull(cache.peek(key))
+    }
+
+    @Test
+    fun `availability for stale metadata does not overwrite a newer source`() {
+        val newer = source.copy(quality = "720p", qualityValue = 720)
+        val checked = source.copy(debridCacheStatus = cachedStatus(2_000_000_000L))
+        assertEquals(listOf(newer), applyDiscoveryAvailability(listOf(newer), listOf(source), listOf(checked)))
+    }
+
+    @Test
+    fun `availability with a newly known oversized file removes the source`() {
+        val checked = source.copy(debridCacheStatus = cachedStatus(7_000_000_000L))
+        assertEquals(emptyList<Stream>(), applyDiscoveryAvailability(listOf(source), listOf(source), listOf(checked)))
+    }
+
+    private fun cachedStatus(size: Long) =
+        StreamDebridCacheStatus("torbox", "TorBox", StreamDebridCacheState.CACHED, cachedSize = size)
 
     @Test
     fun `abandoned search cancels after transition grace`() = runTest {

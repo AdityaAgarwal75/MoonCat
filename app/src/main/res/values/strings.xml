@@ -3085,6 +3085,7 @@
     <string name="stream_error_detail_addon_timeout">the addon request timed out</string>
     <string name="stream_error_detail_addon_cleartext_blocked">the addon uses an insecure HTTP connection blocked by Android</string>
     <string name="stream_error_detail_addon_request_failed">the addon request failed</string>
+    <string name="stream_error_no_eligible_sources">Sources were found, but they are 4K or exceed the 6 GB limit.</string>
     <string name="stream_error_fetch_failed">Failed to fetch streams</string>
 
     <!-- Trakt: paginated fetch + comments -->

@@ -36,7 +36,15 @@ fun playbackRequestKey(
         field(hash.orEmpty().lowercase(Locale.ROOT))
         field(fileIndex?.toString().orEmpty())
     }
-    return digest.digest().joinToString("") { "%02x".format(it) }
+    val hex = "0123456789abcdef"
+    val bytes = digest.digest()
+    return buildString(bytes.size * 2) {
+        bytes.forEach { byte ->
+            val value = byte.toInt() and 0xff
+            append(hex[value ushr 4])
+            append(hex[value and 0x0f])
+        }
+    }
 }
 
 fun Stream.playbackRequestKey(): String {

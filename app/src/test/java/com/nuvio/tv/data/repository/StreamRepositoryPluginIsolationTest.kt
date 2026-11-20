@@ -125,11 +125,23 @@ class StreamRepositoryPluginIsolationTest {
     @Test
     fun `raw candidates arrive before slow optional availability checks`() = runBlocking {
         val harness = newHarness(emptyList())
+        coEvery { harness.api.getStreams(any()) } returns Response.success(
+            StreamResponseDto(listOf(StreamDto(
+                name = "Fast Stream 1080p 2 GB",
+                infoHash = "0123456789abcdef0123456789abcdef01234567"
+            )))
+        )
+        val started = CompletableDeferred<Unit>()
         val waiting = CompletableDeferred<List<AddonStreams>>()
-        coEvery { harness.availability.annotateCachedAvailability(any()) } coAnswers { waiting.await() }
+        coEvery { harness.availability.annotateCachedAvailability(any()) } coAnswers {
+            started.complete(Unit)
+            waiting.await()
+        }
         val first = withTimeout(1_000) {
-            harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
+            val discovered = harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
                 .first { it is NetworkResult.Success }
+            started.await()
+            discovered
         } as NetworkResult.Success
         assertEquals(1, first.data.single().streams.size)
         waiting.complete(emptyList())
@@ -137,7 +149,7 @@ class StreamRepositoryPluginIsolationTest {
     }
 
     @Test
-    fun `discovery hides oversized dubbed candidates`() = runTest {
+    fun `discovery reports no usable sources when every candidate is excluded`() = runTest {
         val harness = newHarness(emptyList())
         coEvery { harness.api.getStreams(any()) } returns Response.success(
             StreamResponseDto(listOf(StreamDto(
@@ -146,8 +158,9 @@ class StreamRepositoryPluginIsolationTest {
             )))
         )
         val result = harness.repository.getStreamsFromAllAddons("movie", "tt1341338", null, null)
-            .toList().last() as NetworkResult.Success
-        assertTrue(result.data.flatMap { it.streams }.isEmpty())
+            .toList().last()
+        assertTrue(result is NetworkResult.Error)
+        coVerify(exactly = 0) { harness.availability.annotateCachedAvailability(any()) }
     }
 
     @Test

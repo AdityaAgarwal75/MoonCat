@@ -1,5 +1,6 @@
 package com.nuvio.tv.data.repository
 
+import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
 import com.nuvio.tv.domain.model.Stream
 
 /**
@@ -38,3 +39,20 @@ internal fun Stream.discoveryIdentity() = StreamDiscoveryIdentity(
     // Preserve that evidence until the player discovers the actual audio tracks.
     label = listOf(name, title, description)
 )
+
+/** Attach an asynchronous cache check only to the exact source metadata it checked. */
+internal fun applyDiscoveryAvailability(
+    current: List<Stream>,
+    original: List<Stream>,
+    checked: List<Stream>
+): List<Stream> {
+    val originalByKey = original.associateBy { it.discoveryIdentity() }
+    val checkedByKey = checked.associateBy { it.discoveryIdentity() }
+    return current.mapNotNull { stream ->
+        val key = stream.discoveryIdentity()
+        if (stream != originalByKey[key]) return@mapNotNull stream
+        val status = checkedByKey[key]?.debridCacheStatus ?: return@mapNotNull stream
+        if (status == stream.debridCacheStatus) return@mapNotNull stream
+        stream.copy(debridCacheStatus = status).takeIf(MoonCatSourcePolicy::visibleSource)
+    }
+}

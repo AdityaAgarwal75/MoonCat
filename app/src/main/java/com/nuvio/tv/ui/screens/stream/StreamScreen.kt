@@ -292,9 +292,11 @@ fun StreamScreen(
         }
         // Torrent streams have url == null but carry an infoHash; navigation
         // builds a torrent:// sentinel URL downstream.
-        if (playbackInfo.url != null || (playbackInfo.isTorrent && playbackInfo.infoHash != null)) {
+        if (!playbackInfo.url.isNullOrBlank() || (playbackInfo.isTorrent && !playbackInfo.infoHash.isNullOrBlank())) {
             viewModel.awaitStreamLinkCacheSave()
             routeAutoPlay(playbackInfo)
+        } else {
+            viewModel.retryAfterAutoPlayResolutionFailure(stream)
         }
     }
 
@@ -1085,7 +1087,7 @@ private fun StreamsList(
             val base = stream.stableKey(0)
             val occurrence = seen.getOrDefault(base, 0)
             seen[base] = occurrence + 1
-            stream.stableKey(occurrence)
+            if (occurrence == 0) base else stream.stableKey(occurrence)
         }
     }
     val firstStreamKey = streamKeys.firstOrNull()

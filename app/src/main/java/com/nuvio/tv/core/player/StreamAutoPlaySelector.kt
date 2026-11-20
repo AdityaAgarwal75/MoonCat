@@ -1,6 +1,8 @@
 package com.nuvio.tv.core.player
 
 import com.nuvio.tv.core.build.AppFeaturePolicy
+import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
+import com.nuvio.tv.core.mooncat.PlaybackPreferences
 import com.nuvio.tv.data.local.StreamAutoPlayMode
 import com.nuvio.tv.data.local.StreamAutoPlaySource
 import com.nuvio.tv.domain.model.AddonStreams
@@ -51,8 +53,7 @@ object StreamAutoPlaySelector {
             StreamDebridCacheState.CACHED,
             null -> Unit
         }
-        return stream.isTorrent() ||
-            stream.isDirectDebrid() ||
+        return stream.isDirectDebrid() ||
             // A YouTube id is resolved to a playable URL on the device when the stream is played.
             // Builds without in-app YouTube playback open the watch page instead, an external link.
             (AppFeaturePolicy.inAppTrailerPlaybackEnabled && stream.youTubeIdToResolve() != null)
@@ -111,83 +112,60 @@ object StreamAutoPlaySelector {
             StreamAutoPlaySource.ENABLED_PLUGINS_ONLY -> streams.filter { it.addonName !in installedAddonNames }
         }
         fun rank(values: List<Stream>) = if (usePlaybackPreferences)
-            com.nuvio.tv.core.mooncat.PlaybackPreferences.order(values, originalLanguage, anime)
-            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(values, preferredAudioLanguage, allow4k)
+            PlaybackPreferences.order(values, originalLanguage, anime)
+            else MoonCatSourcePolicy.rank(values, preferredAudioLanguage, allow4k)
         fun languageTier(stream: Stream) = if (usePlaybackPreferences)
-            com.nuvio.tv.core.mooncat.PlaybackPreferences.languageTier(stream, originalLanguage, anime)
-            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.languageTier(stream, preferredAudioLanguage ?: "hi")
-        val candidateStreams = rank(sourceScopedStreams).filter { stream ->
-            val isAddonStream = stream.addonName in installedAddonNames
-            if (stream.serverTarget != null) {
-                true
-            } else if (isAddonStream) {
-                selectedAddons.isEmpty() || stream.addonName in selectedAddons
-            } else {
-                selectedPlugins.isEmpty() || stream.addonName in selectedPlugins
-            }
-        }
-        if (candidateStreams.isEmpty()) return emptyList()
-
-        // Binge group matching takes priority over mode and source filters — even in MANUAL mode,
-        // a persisted binge group should auto-play without showing the picker.
-        // Search ALL streams, not just candidateStreams, since binge group reuse should
-        // not be limited by autoplay source/addon selection filters.
+            PlaybackPreferences.languageTier(stream, originalLanguage, anime)
+            else MoonCatSourcePolicy.languageTier(stream, preferredAudioLanguage ?: "hi")
         val targetBingeGroup = preferredBingeGroup?.trim().orEmpty()
-        if (preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()) {
-            val bingeGroupMatch = rank(streams).firstOrNull { stream ->
-                !stream.isExternal() &&
-                    (preferredAudioLanguage == null ||
-                        languageTier(stream) == (if (usePlaybackPreferences) languageTier(candidateStreams.first())
-                            else candidateStreams.minOf { languageTier(it) })) &&
-                    stream.behaviorHints?.bingeGroup == targetBingeGroup &&
-                    isPlayable(stream)
+        val canReuseBingeGroup = preferBingeGroupInSelection && targetBingeGroup.isNotEmpty()
+        if (!canReuseBingeGroup && (bingeGroupOnly || mode == StreamAutoPlayMode.MANUAL)) return emptyList()
+
+        val candidateStreams = rank(sourceScopedStreams.filter { stream ->
+            isPlayable(stream) && when {
+                stream.serverTarget != null -> true
+                stream.addonName in installedAddonNames ->
+                    selectedAddons.isEmpty() || stream.addonName in selectedAddons
+                else -> selectedPlugins.isEmpty() || stream.addonName in selectedPlugins
             }
-            if (bingeGroupMatch != null) return if (mode == StreamAutoPlayMode.MANUAL || bingeGroupOnly) listOf(bingeGroupMatch)
-                else listOf(bingeGroupMatch) + candidateStreams.filter { it != bingeGroupMatch && isPlayable(it) }
-            // When bingeGroupOnly is set (MANUAL mode with only binge-group
-            // preference enabled), don't fall back to a non-matching stream —
-            // return emptyList() so the caller shows the stream picker instead.
-            if (bingeGroupOnly) return emptyList()
+        })
+
+        // Reuse checks all providers, even when autoplay is limited to selected providers.
+        if (canReuseBingeGroup) {
+            val bestLanguage = if (preferredAudioLanguage == null) null
+                else if (usePlaybackPreferences) candidateStreams.firstOrNull()?.let(::languageTier)
+                else candidateStreams.minOfOrNull(::languageTier)
+            val hasViableCandidate = usePlaybackPreferences &&
+                candidateStreams.firstOrNull()?.let { MoonCatSourcePolicy.availabilityTier(it) != 2 } == true
+            val bingeGroupMatch = rank(streams.filter { stream ->
+                stream.behaviorHints?.bingeGroup == targetBingeGroup &&
+                    isPlayable(stream) &&
+                    (bestLanguage == null || languageTier(stream) == bestLanguage) &&
+                    (!hasViableCandidate || MoonCatSourcePolicy.availabilityTier(stream) != 2)
+            }).firstOrNull()
+            if (bingeGroupMatch != null) {
+                return if (mode == StreamAutoPlayMode.MANUAL || bingeGroupOnly) listOf(bingeGroupMatch)
+                    else listOf(bingeGroupMatch) + candidateStreams.filter { it != bingeGroupMatch }
+            }
         }
 
-        if (bingeGroupOnly) return emptyList()
-
-        if (mode == StreamAutoPlayMode.MANUAL) return emptyList()
+        if (bingeGroupOnly || candidateStreams.isEmpty()) return emptyList()
 
         return when (mode) {
             StreamAutoPlayMode.MANUAL -> emptyList()
             StreamAutoPlayMode.FIRST_STREAM -> {
-                val playable = candidateStreams.filter { isPlayable(it) }
-                val (ready, pending) = playable.partition {
+                if (usePlaybackPreferences) return candidateStreams
+                val (ready, pending) = candidateStreams.partition {
                     !it.isTorrent() || it.debridCacheStatus == null ||
                         it.debridCacheStatus.state == StreamDebridCacheState.CACHED
                 }
-                if (usePlaybackPreferences) playable else ready + pending
+                ready + pending
             }
             StreamAutoPlayMode.REGEX_MATCH -> {
-                val pattern = regexPattern.trim()
- 
-                // Try to compile the user regex
-                val userRegex = runCatching { Regex(pattern, RegexOption.IGNORE_CASE) }.getOrNull()
-                if (userRegex == null) return emptyList()
+                val userRegex = runCatching { Regex(regexPattern.trim(), RegexOption.IGNORE_CASE) }
+                    .getOrNull() ?: return emptyList()
 
-                // Auto-extract exclusion patterns from negative lookaheads
-                val exclusionMatches = Regex("\\(\\?![^)]*?\\(([^)]+)\\)").findAll(pattern)
-
-                val exclusionWords = exclusionMatches
-                    .flatMap { match -> match.groupValues[1].split("|") }
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() }
-                    .toList()
-
-                val excludeRegex = if (exclusionWords.isNotEmpty()) {
-                    Regex("\\b(${exclusionWords.joinToString("|")})\\b", RegexOption.IGNORE_CASE)
-                } else null
-
-                // 1. Build list of ALL regex‑matching streams
-                val matchingStreams = candidateStreams.filter { stream ->
-                    if (!isPlayable(stream)) return@filter false
-
+                candidateStreams.filter { stream ->
                     val searchableText = buildString {
                         append(stream.addonName).append(' ')
                         append(stream.name.orEmpty()).append(' ')
@@ -197,19 +175,8 @@ object StreamAutoPlaySelector {
                         if (stream.isTorrent()) append(' ').append(stream.infoHash.orEmpty())
                     }
 
-                    // Must match include pattern
-                    if (!userRegex.containsMatchIn(searchableText)) return@filter false
-
-                    // Must NOT match exclusion pattern
-                    if (excludeRegex != null && excludeRegex.containsMatchIn(searchableText)) {
-                        return@filter false
-                    }
-
-                    true
+                    userRegex.containsMatchIn(searchableText)
                 }
-
-                if (matchingStreams.isEmpty()) return emptyList()
-                matchingStreams
             }
 
         }

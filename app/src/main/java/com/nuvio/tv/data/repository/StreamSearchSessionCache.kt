@@ -56,7 +56,7 @@ internal class StreamSearchSessionCache(
         var completedAtMs: Long? = null
         var subscribers: Int = 0
         var stopJob: Job? = null
-        var lastSuccessfulResult: NetworkResult.Success<List<AddonStreams>>? = null
+        @Volatile var lastSuccessfulResult: NetworkResult.Success<List<AddonStreams>>? = null
     }
 
     private val mutex = Mutex()
@@ -142,15 +142,13 @@ internal class StreamSearchSessionCache(
         session.job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 producer().collect { result ->
-                    if (result is NetworkResult.Success && result.data.isNotEmpty()) {
-                        session.lastSuccessfulResult = result
+                    if (result is NetworkResult.Success) {
+                        // An explicit empty snapshot retracts earlier results.
+                        session.lastSuccessfulResult = result.takeIf { it.data.any { group -> group.streams.isNotEmpty() } }
                     }
                     session.state.update { current ->
-                        Snapshot(
-                            result = result,
-                            version = current.version + 1,
-                            isComplete = false
-                        )
+                        if (result == current.result) current
+                        else Snapshot(result = result, version = current.version + 1, isComplete = false)
                     }
                 }
             } catch (error: CancellationException) {

@@ -35,8 +35,10 @@ data class Stream(
      * Returns the primary stream source URL
      */
     fun getStreamUrl(): String? =
-        listOfNotNull(url, externalUrl)
-            .firstOrNull { !it.isMagnetLink() && !it.isTorrentUrl() }
+        url?.takeIf { it.isDirectPlaybackUrl() } ?: externalUrl?.takeIf { it.isDirectPlaybackUrl() }
+
+    private fun String.isDirectPlaybackUrl(): Boolean =
+        isNotBlank() && !isMagnetLink() && !isTorrentUrl()
 
     fun torrentMagnetUri(): String? =
         listOfNotNull(url, externalUrl)
@@ -121,7 +123,8 @@ data class Stream(
     /**
      * Returns true if this is an external URL (opens in browser)
      */
-    fun isExternal(): Boolean = externalUrl != null && url == null && !externalUrl.isMagnetLink() && !externalUrl.isTorrentUrl()
+    fun isExternal(): Boolean =
+        url.isNullOrBlank() && externalUrl?.isDirectPlaybackUrl() == true
 
     /**
      * Returns a display name for the stream, or null when no field is usable.

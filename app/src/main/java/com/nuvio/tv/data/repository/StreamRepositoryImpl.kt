@@ -6,6 +6,9 @@ import com.nuvio.tv.R
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.network.safeApiCall
 import com.nuvio.tv.core.debrid.LocalDebridAvailabilityService
+import com.nuvio.tv.core.debrid.localAvailabilityHash
+import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
+import com.nuvio.tv.core.mooncat.MoonCatStreamProviders
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.plugin.resolvePluginSeasonEpisode
 import com.nuvio.tv.core.profile.ProfileManager
@@ -119,9 +122,8 @@ class StreamRepositoryImpl @Inject constructor(
                     videoId = videoId,
                     season = season,
                     episode = episode,
-                    addons = if (isNativeServerRequest) emptyList() else sourceConfiguration.addons.filter {
-                        com.nuvio.tv.core.mooncat.MoonCatStreamProviders.isAllowed(it)
-                    },
+                    addons = if (isNativeServerRequest) emptyList()
+                    else sourceConfiguration.addons.filter(MoonCatStreamProviders::isAllowed),
                     hasCompatiblePlugins = false,
                     serverSources = if (isNativeServerRequest) serverStreams.sources(type, videoId, season, episode, forceRefresh) else emptyList()
                 )
@@ -207,7 +209,7 @@ class StreamRepositoryImpl @Inject constructor(
             val requestId = addonVideoId(type, videoId, season, episode)
             val streamAddons = addons.filter { addon ->
                 addon.supportsStreamResource(requestType, requestId)
-            }
+            }.sortedByDescending(MoonCatStreamProviders::isTorrentio)
             val addonSlots = Semaphore(4)
             val availabilitySlots = Semaphore(2)
             val resultMutex = Mutex()
@@ -219,6 +221,7 @@ class StreamRepositoryImpl @Inject constructor(
 
             // Accumulate results as they arrive
             val accumulatedResults = mutableListOf<AddonStreams>()
+            var hadExcludedSources = false
 
             coroutineScope {
                 // Channel to receive results as they complete
@@ -361,17 +364,19 @@ class StreamRepositoryImpl @Inject constructor(
                     }
                 }
 
-                // Publish discovery immediately. Device/language ranking belongs to selection,
-                // not discovery: filtering here made existing dubbed files undiscoverable.
-                // Debrid availability is optional enrichment and cannot hold up another provider.
+                // Publish raw results first. Availability checks can complete independently.
                 for (rawResult in resultChannel) {
-                    val result = rawResult.copy(streams = rawResult.streams.filter {
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
-                    })
-                    resultMutex.withLock {
-                        mergeDiscoveryResult(accumulatedResults, result)
-                        send(NetworkResult.Success(accumulatedResults.toList()))
+                    val usable = rawResult.streams.filter(MoonCatSourcePolicy::visibleSource)
+                    val result = rawResult.copy(streams = usable)
+                    val merged = resultMutex.withLock {
+                        if (usable.size < rawResult.streams.size) hadExcludedSources = true
+                        if (usable.isEmpty()) return@withLock false
+                        val changed = mergeDiscoveryResult(accumulatedResults, result)
+                        if (changed) send(NetworkResult.Success(accumulatedResults.toList()))
+                        changed
                     }
+                    if (!merged || usable.none { it.localAvailabilityHash() != null }) continue
+
                     launch {
                         val checkedResult = try {
                             withTimeoutOrNull(2_500L) {
@@ -383,33 +388,37 @@ class StreamRepositoryImpl @Inject constructor(
                         } catch (error: CancellationException) {
                             throw error
                         } catch (error: Exception) {
-                            null // Optional provider availability never destroys playable results.
+                            null
                         }
-                        if (checkedResult != null && checkedResult != result) {
-                            val limitedResult = checkedResult.copy(streams = checkedResult.streams.filter {
-                                com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
-                            })
-                            resultMutex.withLock {
-                                mergeDiscoveryResult(accumulatedResults, limitedResult)
-                                send(NetworkResult.Success(accumulatedResults.toList()))
-                            }
+                        if (checkedResult == null || checkedResult == result) return@launch
+
+                        resultMutex.withLock {
+                            val index = accumulatedResults.indexOfFirst { it.addonName == result.addonName }
+                            if (index < 0) return@withLock
+                            val current = accumulatedResults[index]
+                            val updated = applyDiscoveryAvailability(current.streams, result.streams, checkedResult.streams)
+                            if (updated == current.streams) return@withLock
+                            if (updated.size < current.streams.size) hadExcludedSources = true
+                            if (updated.isEmpty()) accumulatedResults.removeAt(index)
+                            else accumulatedResults[index] = current.copy(streams = updated)
+                            send(NetworkResult.Success(accumulatedResults.toList()))
                         }
                     }
                 }
             }
 
-            // Emit final result (even if empty)
             if (accumulatedResults.isEmpty()) {
-                val errorMessage = buildAggregateFailureMessage(
-                    type = type,
-                    id = videoId,
-                    attemptedAddonNames = attemptedAddonNames,
-                    failures = attemptedFailures.toList()
-                )
-                if (errorMessage != null) {
-                    send(NetworkResult.Error(errorMessage))
+                if (hadExcludedSources) {
+                    send(NetworkResult.Error(context.getString(R.string.stream_error_no_eligible_sources)))
                 } else {
-                    send(NetworkResult.Success(emptyList()))
+                    val errorMessage = buildAggregateFailureMessage(
+                        type = type,
+                        id = videoId,
+                        attemptedAddonNames = attemptedAddonNames,
+                        failures = attemptedFailures.toList()
+                    )
+                    if (errorMessage != null) send(NetworkResult.Error(errorMessage))
+                    else send(NetworkResult.Success(emptyList()))
                 }
             }
         } catch (e: Exception) {
@@ -504,16 +513,17 @@ class StreamRepositoryImpl @Inject constructor(
     private fun mergeDiscoveryResult(
         accumulatedResults: MutableList<AddonStreams>,
         result: AddonStreams
-    ) {
+    ): Boolean {
         val existingIndex = accumulatedResults.indexOfFirst { it.addonName == result.addonName }
-        if (existingIndex >= 0) {
-            val existing = accumulatedResults[existingIndex]
-            accumulatedResults[existingIndex] = existing.copy(
-                streams = mergeStreams(existing.streams, result.streams)
-            )
-        } else {
+        if (existingIndex < 0) {
             accumulatedResults.add(result.copy(streams = mergeStreams(emptyList(), result.streams)))
+        } else {
+            val existing = accumulatedResults[existingIndex]
+            val merged = mergeStreams(existing.streams, result.streams)
+            if (merged == existing.streams) return false
+            accumulatedResults[existingIndex] = existing.copy(streams = merged)
         }
+        return true
     }
 
     private fun mergeStreams(existing: List<Stream>, incoming: List<Stream>): List<Stream> {

@@ -26,6 +26,7 @@ object MoonCatSourcePolicy {
     private val seederLabel = Regex("(?i)\\b(?:seeders?|seeds?)\\s*[:=]?\\s*$COUNT")
     private val countBeforeLabel = Regex("(?i)$COUNT\\s+(?:seeders?|seeds?)\\b")
     private val sdResolution = Regex("""(?i)\b(?:576|540|480|360|240)p\b""")
+    private val qhdResolution = Regex("""(?i)\b1440p\b""")
     private val fullHdResolution = Regex("""(?i)(\b1080p\b|\b1920x1080\b)""")
     private val hdResolution = Regex("""(?i)(\b720p\b|\b1280x720\b)""")
     private fun text(stream: Stream) = listOfNotNull(stream.name, stream.title, stream.description,
@@ -35,10 +36,12 @@ object MoonCatSourcePolicy {
         stream.clientResolve?.stream?.raw?.parsed?.resolution,
         stream.clientResolve?.stream?.raw?.parsed?.quality).joinToString(" ")
 
-    fun sizeBytes(stream: Stream): Long? = stream.behaviorHints?.videoSize?.takeIf { it > 0L }
+    fun sizeBytes(stream: Stream): Long? = sizeBytes(stream) { text(stream) }
+
+    private inline fun sizeBytes(stream: Stream, label: () -> String): Long? = stream.behaviorHints?.videoSize?.takeIf { it > 0L }
         ?: stream.clientResolve?.stream?.raw?.size?.takeIf { it > 0L }
         ?: stream.debridCacheStatus?.cachedSize?.takeIf { it > 0L }
-        ?: sizePattern.find(text(stream))?.let {
+        ?: sizePattern.find(label())?.let {
             val multiplier = when (it.groupValues[2].lowercase()) {
                 "gib" -> 1_073_741_824.0
                 "gb" -> 1_000_000_000.0
@@ -51,7 +54,7 @@ object MoonCatSourcePolicy {
     /** Legacy 4K parameter kept for API compatibility; explicit 4K is always blocked. */
     @Suppress("UNUSED_PARAMETER")
     fun suitable(stream: Stream, maxFileBytes: Long = MAX_FILE_BYTES, allow4k: Boolean = false): Boolean =
-        visibleSource(stream) && (sizeBytes(stream)?.let { it <= maxFileBytes } ?: true)
+        !is4k(stream) && (sizeBytes(stream)?.let { it <= minOf(maxFileBytes, USER_MAX_FILE_BYTES) } ?: true)
 
     @Suppress("UNUSED_PARAMETER")
     fun canInspectAudio(stream: Stream, allow4k: Boolean = false): Boolean = visibleSource(stream)
@@ -94,42 +97,50 @@ object MoonCatSourcePolicy {
     fun advertisesAudio(stream: Stream, language: String): Boolean =
         normalizeLanguage(language)?.let { it in languageHints(stream) } == true
 
-    fun languageHints(stream: Stream): Set<String> = buildSet {
+    fun languageHints(stream: Stream): Set<String> = languageHints(stream, text(stream))
+
+    private fun languageHints(stream: Stream, label: String): Set<String> = buildSet {
         stream.clientResolve?.stream?.raw?.parsed?.languages.orEmpty()
             .mapNotNull(com.nuvio.tv.domain.playback.AudioLanguagePolicy::normalize).forEach(::add)
-        addAll(com.nuvio.tv.domain.playback.AudioLanguagePolicy.advertisedLanguages(text(stream)))
+        addAll(com.nuvio.tv.domain.playback.AudioLanguagePolicy.advertisedLanguages(label))
     }
 
     fun is4kLabel(label: String): Boolean = fourK.containsMatchIn(label)
-    fun is4k(stream: Stream): Boolean {
-        val label = text(stream)
-        return stream.qualityValue >= 2160 ||
+    fun is4k(stream: Stream): Boolean = is4k(stream, text(stream))
+
+    private fun is4k(stream: Stream, label: String): Boolean =
+        stream.qualityValue >= 2160 ||
             fourK.containsMatchIn(label) || above4k.containsMatchIn(label) ||
             (ultraHd.containsMatchIn(label) && stream.qualityValue !in 1..2159 &&
                 !sub4kResolution.containsMatchIn(label))
-    }
 
     fun qualityTier(stream: Stream): Int {
-        val description = text(stream)
-        return when {
-            is4k(stream) -> -1
+        val label = text(stream)
+        return if (is4k(stream, label)) -1 else qualityTier(stream, label)
+    }
+
+    private fun qualityTier(stream: Stream, description: String): Int =
+        when {
             stream.qualityValue == 1080 || fullHdResolution.containsMatchIn(description) -> 0
-            stream.qualityValue in 1081..2159 || Regex("""(?i)\b1440p\b""").containsMatchIn(description) -> 1
+            stream.qualityValue in 1081..2159 || qhdResolution.containsMatchIn(description) -> 1
             stream.qualityValue == 720 || hdResolution.containsMatchIn(description) -> 1
             stream.qualityValue in 1..719 || sdResolution.containsMatchIn(description) -> 2
             else -> 3
         }
-    }
 
-    fun languageTier(stream: Stream, language: String = "hi"): Int {
+    fun languageTier(stream: Stream, language: String = "hi"): Int =
+        languageTier(languageHints(stream), preferredLanguageOrder(language))
+
+    internal fun languageTier(stream: Stream, languages: List<String>): Int =
+        languageTier(languageHints(stream), languages)
+
+    private fun languageTier(hints: Set<String>, languages: List<String>): Int =
+        languages.indexOfFirst { it in hints }.takeIf { it >= 0 }
+            ?: if (hints.isEmpty()) languages.size else languages.size + 1
+
+    private fun preferredLanguageOrder(language: String): List<String> {
         val preferred = normalizeLanguage(language) ?: "hi"
-        val hints = languageHints(stream)
-        return when {
-            preferred in hints -> 0
-            (if (preferred == "hi") "en" else "hi") in hints -> 1
-            hints.isEmpty() -> 2
-            else -> 3
-        }
+        return listOf(preferred, if (preferred == "hi") "en" else "hi")
     }
 
     /** Language is a preference, never a requirement: retain the original-language fallback. */
@@ -148,23 +159,26 @@ object MoonCatSourcePolicy {
     }
 
     /** Prefer clean digital releases over unknown encodes within the same resolution. */
-    fun releaseTier(stream: Stream): Int = when {
-        cleanRelease.containsMatchIn(text(stream)) -> 0
-        webRelease.containsMatchIn(text(stream)) -> 1
+    fun releaseTier(stream: Stream): Int = releaseTier(text(stream))
+
+    private fun releaseTier(label: String): Int = when {
+        cleanRelease.containsMatchIn(label) -> 0
+        webRelease.containsMatchIn(label) -> 1
         else -> 2
     }
 
     /** Seed counts are availability hints, never measured bandwidth. */
-    fun advertisedSeeders(stream: Stream): Int = seederCount(stream) ?: 0
+    fun advertisedSeeders(stream: Stream): Int = seederCount(text(stream)) ?: 0
 
     fun availabilityTier(stream: Stream): Int {
         if (!stream.isTorrent()) return 0
-        val seeds = seederCount(stream)
-        return if (seeds == null) 1 else if (seeds > 0) 0 else 2
+        return availabilityTier(torrent = true, seeds = seederCount(text(stream)))
     }
 
-    private fun seederCount(stream: Stream): Int? {
-        val content = text(stream)
+    private fun availabilityTier(torrent: Boolean, seeds: Int?): Int =
+        if (!torrent || (seeds != null && seeds > 0)) 0 else if (seeds == null) 1 else 2
+
+    private fun seederCount(content: String): Int? {
         return sequenceOf(seederIcon, seederLabel, countBeforeLabel)
             .flatMap { it.findAll(content) }
             .mapNotNull { match ->
@@ -187,27 +201,45 @@ object MoonCatSourcePolicy {
     )
 
     fun instantOrder(streams: List<Stream>, language: String): List<Stream> =
-        ordered(streams, language, false, USER_MAX_FILE_BYTES).filter { !it.isExternal() }
+        rank(streams, language).filter { !it.isExternal() }
 
     fun readinessOrder(streams: List<Stream>, language: String): List<Stream> =
-        ordered(streams, language, false, MAX_FILE_BYTES)
+        rank(streams, language)
 
+    @Suppress("UNUSED_PARAMETER")
     fun rank(streams: List<Stream>, preferredLanguage: String? = null, allow4k: Boolean = false): List<Stream> =
-        ordered(streams, preferredLanguage, allow4k, MAX_FILE_BYTES)
+        ordered(streams, preferredLanguage?.let(::preferredLanguageOrder), demoteEmptySwarms = false)
 
-    private fun ordered(streams: List<Stream>, language: String?, allow4k: Boolean, maxBytes: Long): List<Stream> =
-        streams.asSequence().filter { suitable(it, maxBytes, allow4k) }.map { stream ->
-            val seeds = seederCount(stream)
+    internal fun rankForPlayback(streams: List<Stream>, languages: List<String>): List<Stream> =
+        ordered(streams.filterNot { it.isExternal() }, languages, demoteEmptySwarms = true)
+
+    private fun ordered(
+        streams: List<Stream>,
+        languages: List<String>?,
+        demoteEmptySwarms: Boolean
+    ): List<Stream> =
+        streams.mapNotNull { stream ->
+            val label = text(stream)
+            if (is4k(stream, label)) return@mapNotNull null
+            val bytes = sizeBytes(stream) { label }
+            if (bytes != null && bytes > USER_MAX_FILE_BYTES) return@mapNotNull null
+            val seeds = seederCount(label)
             val torrent = stream.isTorrent()
-            Ranked(stream, if (language == null) 0 else languageTier(stream, language),
-                if (!torrent || (seeds != null && seeds > 0)) 0 else if (seeds == null) 1 else 2,
-                if (torrent) seeds ?: 0 else 0, qualityTier(stream), seeds ?: 0,
-                if (cameraRelease.containsMatchIn(text(stream))) 1 else 0,
-                releaseTier(stream), sizeBytes(stream) ?: Long.MAX_VALUE)
-        }.sortedWith(compareBy<Ranked> { it.language }.thenBy { it.availability }
-            .thenBy { it.camera }
+            Ranked(
+                stream = stream,
+                language = languages?.let { languageTier(languageHints(stream, label), it) } ?: 0,
+                availability = availabilityTier(torrent, seeds),
+                torrentSeeders = if (torrent) seeds ?: 0 else 0,
+                quality = qualityTier(stream, label),
+                seeders = seeds ?: 0,
+                camera = if (cameraRelease.containsMatchIn(label)) 1 else 0,
+                release = releaseTier(label),
+                size = bytes ?: Long.MAX_VALUE
+            )
+        }.sortedWith(compareBy<Ranked> { demoteEmptySwarms && it.availability == 2 }
+            .thenBy { it.language }.thenBy { it.availability }.thenBy { it.camera }
             .thenBy { if (it.quality in 0..1) 0 else it.quality }
             .thenByDescending { it.torrentSeeders }.thenBy { it.quality }
             .thenByDescending { it.seeders }.thenBy { it.release }.thenBy { it.size })
-            .map { it.stream }.toList()
+            .map { it.stream }
 }

@@ -11,6 +11,9 @@ import com.nuvio.tv.core.debrid.DirectDebridResolveResult
 import com.nuvio.tv.core.debrid.DirectDebridResolver
 import com.nuvio.tv.core.debrid.DirectDebridStreamPreparer
 import com.nuvio.tv.core.plugin.PluginManager
+import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
+import com.nuvio.tv.core.mooncat.PlaybackPreferences
+import com.nuvio.tv.core.mooncat.PlaybackSourceSession
 import com.nuvio.tv.core.network.NetworkResult
 import com.nuvio.tv.core.torrent.TorrentSettings
 import com.nuvio.tv.core.torrent.TorrentService
@@ -41,6 +44,7 @@ import com.nuvio.tv.data.mediaserver.serverPlaybackMessageRes
 import com.nuvio.tv.domain.model.AddonStreams
 import com.nuvio.tv.domain.model.Meta
 import com.nuvio.tv.domain.model.Stream
+import com.nuvio.tv.domain.model.StreamBadge
 import com.nuvio.tv.domain.model.Video
 import com.nuvio.tv.domain.model.WatchProgress
 import com.nuvio.tv.domain.model.StreamDebridCacheState
@@ -140,8 +144,7 @@ class StreamScreenViewModel @Inject constructor(
     private var streamBadgePresentationJob: Job? = null
     private var streamFilterExpandJob: Job? = null
     private var streamFilterFullList: List<Stream> = emptyList()
-    private var streamBadgePresentationRequestId = 0L
-    private var badgedAddonNames: Set<String> = emptySet()
+    private val computedStreamBadges = mutableMapOf<Stream, List<StreamBadge>>()
     private var playbackMetaVideos: List<Video>? = null
 
     private val embeddedStreamGroupName: String by lazy {
@@ -238,59 +241,50 @@ class StreamScreenViewModel @Inject constructor(
         }
     }
 
-    private fun scheduleStreamBadgePresentation(groups: List<AddonStreams>) {
-        // Only process addon groups that haven't been badged yet
-        val newGroups = groups.filter { it.addonName !in badgedAddonNames }
-        if (newGroups.isEmpty()) return
+    private fun Stream.badgeInput(): Stream = if (badges.isEmpty()) this else copy(badges = emptyList())
 
-        // Don't cancel a running job — let it finish its current addons.
-        // After it completes, it will check for any new addons that arrived.
+    private fun Stream.withComputedBadges(): Stream {
+        val computed = computedStreamBadges[badgeInput()].orEmpty()
+        return if (computed.isEmpty()) this else {
+            val result = (badges + computed).distinct()
+            if (result == badges) this else copy(badges = result)
+        }
+    }
+
+    private fun applyComputedBadges(groups: List<AddonStreams>): List<AddonStreams> =
+        groups.map { group ->
+            val streams = group.streams.map { it.withComputedBadges() }
+            if (streams == group.streams) group else group.copy(streams = streams)
+        }
+
+    private fun StreamScreenUiState.withStreamGroups(groups: List<AddonStreams>): StreamScreenUiState {
+        val streams = groups.flatMap { it.streams }
+        val visible = if (selectedAddonFilter == null) streams
+            else streams.filter { it.addonName == selectedAddonFilter }
+        streamFilterFullList = visible
+        val pageEnd = filteredStreams.size.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(visible.size)
+        return copy(addonStreams = groups, allStreams = streams, filteredStreams = visible.take(pageEnd))
+    }
+
+    private fun scheduleStreamBadgePresentation() {
         if (streamBadgePresentationJob?.isActive == true) return
-
-        streamBadgePresentationJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
-            var pending = newGroups
-            while (pending.isNotEmpty()) {
-                val allNewStreams = pending.flatMap { it.streams }
-                val chunks = allNewStreams.chunked(5)
-                for (chunk in chunks) {
-                    ensureActive()
-                    val chunkGroup = AddonStreams(addonName = "", addonLogo = null, streams = chunk)
-                    val badgedChunk = streamBadgePresentation.apply(listOf(chunkGroup))
-                        .firstOrNull()?.streams ?: chunk
-                    ensureActive()
-                    val badgedByKey = badgedChunk.associateBy { it.badgeMergeKey() }
-                    updateUiStateIfChanged { state ->
-                        val updatedAddonStreams = state.addonStreams.map { group ->
-                            group.copy(
-                                streams = group.streams.map { stream ->
-                                    badgedByKey[stream.badgeMergeKey()] ?: stream
-                                }
-                            )
-                        }
-                        val updatedAllStreams = updatedAddonStreams.flatMap { it.streams }
-                        val currentFilter = state.selectedAddonFilter
-                        val fullFiltered = if (currentFilter == null) {
-                            updatedAllStreams
-                        } else {
-                            updatedAllStreams.filter { it.addonName == currentFilter }
-                        }
-                        streamFilterFullList = fullFiltered
-                        val pageEnd = state.filteredStreams.size
-                            .coerceAtLeast(STREAM_FILTER_PAGE_SIZE.coerceAtMost(fullFiltered.size))
-                            .coerceAtMost(fullFiltered.size)
-                        state.copy(
-                            addonStreams = updatedAddonStreams,
-                            allStreams = updatedAllStreams,
-                            filteredStreams = if (pageEnd >= fullFiltered.size) fullFiltered
-                                else fullFiltered.subList(0, pageEnd)
-                        )
-                    }
+        streamBadgePresentationJob = viewModelScope.launch {
+            while (true) {
+                val pending = _uiState.value.allStreams.asSequence().map { it.badgeInput() }
+                    .filterNot { it in computedStreamBadges }.distinct().toList()
+                if (pending.isEmpty()) break
+                val group = AddonStreams(addonName = "", addonLogo = null, streams = pending)
+                val badged = streamBadgePresentation.apply(listOf(group)).single().streams
+                ensureActive()
+                pending.zip(badged).forEach { (stream, result) ->
+                    computedStreamBadges[stream] = result.badges
                 }
-                // Mark processed addons as done
-                badgedAddonNames = badgedAddonNames + pending.map { it.addonName }.toSet()
-                // Check if new addons arrived while we were processing
-                val currentAddons = _uiState.value.addonStreams
-                pending = currentAddons.filter { it.addonName !in badgedAddonNames }
+                // Enrichment may have updated a source while badges were being calculated.
+                // Apply only the badges that match the latest metadata.
+                updateUiStateIfChanged { state ->
+                    val groups = applyComputedBadges(state.addonStreams)
+                    if (groups == state.addonStreams) state else state.withStreamGroups(groups)
+                }
             }
         }
     }
@@ -392,7 +386,6 @@ class StreamScreenViewModel @Inject constructor(
         streamLoadScope = null
         streamLoadJob = null
         streamBadgePresentationJob?.cancel()
-        streamBadgePresentationRequestId += 1
         updateUiStateIfChanged { it.copy(isLoading = false) }
     }
 
@@ -415,9 +408,8 @@ class StreamScreenViewModel @Inject constructor(
         streamLoadScope = null
         streamLoadJob = null
         streamBadgePresentationJob?.cancel()
-        streamBadgePresentationRequestId += 1
         if (forceRefresh || _uiState.value.addonStreams.isEmpty()) {
-            badgedAddonNames = emptySet()
+            computedStreamBadges.clear()
         }
         val newScope = kotlinx.coroutines.CoroutineScope(viewModelScope.coroutineContext + kotlinx.coroutines.SupervisorJob(viewModelScope.coroutineContext[kotlinx.coroutines.Job]))
         streamLoadScope = newScope
@@ -425,7 +417,6 @@ class StreamScreenViewModel @Inject constructor(
             val searchStartedAt = android.os.SystemClock.elapsedRealtime()
             streamLoadCompleted = false
             val playerSettings = playerSettingsDataStore.playerSettings.first()
-            val allow4k = false
             if (manualSelection) {
                 directAutoPlayModeInitializedForSession = true
                 directAutoPlayFlowEnabledForSession = false
@@ -505,161 +496,82 @@ class StreamScreenViewModel @Inject constructor(
                 playerSettings.streamAutoPlayReuseBingeGroup) {
                 contentId?.let { bingeGroupCacheDataStore.get(it) }
             } else null
-            val persistedFilename = if (persistedBingeGroup != null) {
-                contentId?.let { bingeGroupCacheDataStore.getFilename(it) }
-            } else null
-            val persistedInfoHash = if (persistedBingeGroup != null) {
-                contentId?.let { bingeGroupCacheDataStore.getInfoHash(it) }
-            } else null
-
-            val selectionSnapshots = MutableStateFlow(com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot())
+            val installedAddonNames = installedAddonOrder.toSet()
+            val selectionSnapshots = MutableStateFlow(PlaybackSourceSession.Snapshot())
             var sourceSelectionJob: Job? = null
-            var providerSearchFinished = false
-            suspend fun applySuccess(addonStreamGroups: List<AddonStreams>) {
-                val orderedAddonStreams = StreamAutoPlaySelector.orderAddonStreams(
-                    addonStreamGroups.map { group -> group.copy(streams = group.streams.filter {
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.visibleSource(it)
-                    }) },
-                    installedAddonOrder,
-                    preferredServerNames
-                )
-
-                // Preserve badges already computed by prior badge jobs so they
-                // don't vanish when repository emits fresh (badge-less) streams.
-                val existingBadgedStreams = _uiState.value.allStreams
-                    .filter { it.badges.isNotEmpty() }
-                    .associateBy { it.badgeMergeKey() }
-
-                val mergedAddonStreams = if (existingBadgedStreams.isEmpty()) {
-                    orderedAddonStreams
-                } else {
-                    orderedAddonStreams.map { group ->
-                        group.copy(
-                            streams = group.streams.map { stream ->
-                                val existing = existingBadgedStreams[stream.badgeMergeKey()]
-                                if (existing != null && stream.badges.isEmpty()) {
-                                    stream.copy(badges = existing.badges)
-                                } else {
-                                    stream
-                                }
-                            }
-                        )
+            suspend fun applySuccess(addonStreamGroups: List<AddonStreams>, complete: Boolean = false) {
+                val orderedGroups = withContext(Dispatchers.Default) {
+                    val compatibleGroups = addonStreamGroups.mapNotNull { group ->
+                        val streams = group.streams.filter(MoonCatSourcePolicy::visibleSource)
+                        if (streams.isEmpty()) null else if (streams == group.streams) group
+                        else group.copy(streams = streams)
                     }
+                    StreamAutoPlaySelector.orderAddonStreams(compatibleGroups, installedAddonOrder, preferredServerNames)
                 }
-
-                // Parsing and sorting hundreds of provider results must not block TV focus frames.
-                val (allStreams, autoPlayStreams) = withContext(Dispatchers.Default) {
-                    val compatible = mergedAddonStreams.flatMap { it.streams }.filter {
-                        autoPlayIdentity(it) !in failedAutoPlayIdentities && com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.suitable(
-                            it, if ((season != null || episode != null || contentType.equals("series", ignoreCase = true)) && !com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.is4k(it)) com.nuvio.tv.core.mooncat.PlaybackPreferences.MAX_BYTES
-                            else com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.USER_MAX_FILE_BYTES, allow4k = allow4k
-                        )
-                    }
-                    // Keep raw discovery choices; apply device preferences only to autoplay.
-                    mergedAddonStreams.flatMap { it.streams } to
-                        com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.playbackCandidates(
-                            compatible, playerSettings.preferredAudioLanguage, allow4k
-                        )
-                }
-                val availableAddons = mergedAddonStreams.map { it.addonName }
-
-                // Present available choices before awaiting any HTTP/torrent readiness race.
+                val groups = applyComputedBadges(orderedGroups)
+                val availableAddons = groups.map { it.addonName }
                 updateUiStateIfChanged { state ->
-                    val visible = if (state.selectedAddonFilter == null) allStreams
-                        else allStreams.filter { it.addonName == state.selectedAddonFilter }
-                    streamFilterFullList = visible
-                    val pageEnd = state.filteredStreams.size.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(visible.size)
-                    state.copy(isLoading = false, addonStreams = mergedAddonStreams,
-                        allStreams = allStreams, filteredStreams = visible.take(pageEnd),
-                        availableAddons = availableAddons,
-                        sourceChips = mergeSourceChipStatuses(state.sourceChips, availableAddons), error = null)
-                }
-
-                // Scope selection separately from collection. Every incoming provider response
-                // remains visible to the pending language decision, including during native setup.
-                fun candidates(remaining: List<Stream>) = StreamAutoPlaySelector.selectAutoPlayCandidates(
-                    usePlaybackPreferences = true, originalLanguage = contentLanguage,
-                    anime = com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(_uiState.value.genres, contentLanguage, videoId),
-                    preferredAudioLanguage = playerSettings.preferredAudioLanguage,
-                    allow4k = allow4k,
-                    streams = remaining,
-                    mode = playerSettings.streamAutoPlayMode,
-                    regexPattern = playerSettings.streamAutoPlayRegex,
-                    source = playerSettings.streamAutoPlaySource,
-                    installedAddonNames = installedAddonOrder.toSet(),
-                    selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
-                    selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
-                    preferredBingeGroup = persistedBingeGroup,
-                    preferBingeGroupInSelection = persistedBingeGroup != null
-                )
-                val eligible = withContext(Dispatchers.Default) {
-                    com.nuvio.tv.core.mooncat.PlaybackPreferences.order(
-                        candidates(autoPlayStreams), contentLanguage,
-                        com.nuvio.tv.core.mooncat.PlaybackPreferences.isAnime(_uiState.value.genres, contentLanguage, videoId)
-                    ).distinctBy { it.playbackRequestKey() }.take(32)
-                }
-                selectionSnapshots.value = com.nuvio.tv.core.mooncat.PlaybackSourceSession.Snapshot(
-                    eligible, providerSearchFinished
-                )
-                if (!autoPlayHandledForSession && !resolvedAutoPlayTarget &&
-                    sourceSelectionJob?.isActive != true && eligible.isNotEmpty()) {
-                    sourceSelectionJob = launch {
-                        // Start the top metadata candidate through the normal player immediately.
-                        // The player performs actual torrent setup and retains failure recovery.
-                        val selected = com.nuvio.tv.core.mooncat.PlaybackSourceSession().selectMetadata(
-                            selectionSnapshots, playerSettings.preferredAudioLanguage, preserveOrder = true
-                        )
-                        ensureActive()
-                        if (selected != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {
-                            resolvedAutoPlayTarget = true
-                            updateUiStateIfChanged { it.copy(autoPlayStream = selected, error = null) }
-                        }
-                    }
-                }
-
-                val currentFilter = _uiState.value.selectedAddonFilter
-                val fullFiltered = if (currentFilter == null) {
-                    allStreams
-                } else {
-                    allStreams.filter { it.addonName == currentFilter }
-                }
-                streamFilterFullList = fullFiltered
-                val currentPageSize = _uiState.value.filteredStreams.size
-                val pageEnd = currentPageSize.coerceAtLeast(STREAM_FILTER_PAGE_SIZE).coerceAtMost(fullFiltered.size)
-                val paginatedStreams = fullFiltered.take(pageEnd)
-
-                updateUiStateIfChanged {
-                    it.copy(
+                    state.withStreamGroups(groups).copy(
                         isLoading = false,
-                        addonStreams = mergedAddonStreams,
-                        allStreams = allStreams,
-                        filteredStreams = paginatedStreams,
                         availableAddons = availableAddons,
-                        sourceChips = mergeSourceChipStatuses(
-                            existing = _uiState.value.sourceChips,
-                            succeededNames = mergedAddonStreams.map { it.addonName }
-                        ),
+                        sourceChips = mergeSourceChipStatuses(state.sourceChips, availableAddons),
                         error = null,
-                        showDirectAutoPlayOverlay = if (directAutoPlayFlowEnabledForSession || it.autoPlayPlaybackInfo != null) {
-                            true
-                        } else {
-                            false
-                        }
+                        showDirectAutoPlayOverlay = directAutoPlayFlowEnabledForSession || state.autoPlayPlaybackInfo != null
                     )
                 }
-                scheduleStreamBadgePresentation(mergedAddonStreams)
+
+                if (!autoPlayHandledForSession && !resolvedAutoPlayTarget &&
+                    (playerSettings.streamAutoPlayMode != StreamAutoPlayMode.MANUAL || persistedBingeGroup != null)
+                ) {
+                    val streams = _uiState.value.allStreams
+                    val failures = failedAutoPlayIdentities.toSet()
+                    val anime = PlaybackPreferences.isAnime(_uiState.value.genres, contentLanguage, videoId)
+                    val selected = withContext(Dispatchers.Default) {
+                        StreamAutoPlaySelector.selectAutoPlayStream(
+                            streams = if (failures.isEmpty()) streams else streams.filter { it.playbackRequestKey() !in failures },
+                            mode = playerSettings.streamAutoPlayMode,
+                            regexPattern = playerSettings.streamAutoPlayRegex,
+                            source = playerSettings.streamAutoPlaySource,
+                            installedAddonNames = installedAddonNames,
+                            selectedAddons = playerSettings.streamAutoPlaySelectedAddons,
+                            selectedPlugins = playerSettings.streamAutoPlaySelectedPlugins,
+                            preferredBingeGroup = persistedBingeGroup,
+                            preferBingeGroupInSelection = persistedBingeGroup != null,
+                            preferredAudioLanguage = playerSettings.preferredAudioLanguage,
+                            originalLanguage = contentLanguage,
+                            anime = anime,
+                            usePlaybackPreferences = true
+                        )
+                    }
+                    selectionSnapshots.value = PlaybackSourceSession.Snapshot(listOfNotNull(selected), complete)
+                    if (!autoPlayHandledForSession && !resolvedAutoPlayTarget &&
+                        sourceSelectionJob?.isActive != true && selected != null
+                    ) {
+                        sourceSelectionJob = launch {
+                            val winner = PlaybackSourceSession().selectMetadata(
+                                selectionSnapshots, playerSettings.preferredAudioLanguage, preserveOrder = true
+                            )
+                            ensureActive()
+                            if (winner != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {
+                                resolvedAutoPlayTarget = true
+                                updateUiStateIfChanged { it.copy(autoPlayStream = winner, error = null) }
+                            }
+                        }
+                    }
+                }
+                scheduleStreamBadgePresentation()
             }
 
             if (shouldAttemptEmbeddedMetaStreamLookup()) {
-                withTimeoutOrNull((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(1L)) {
+                val embeddedAddonStreams = withTimeoutOrNull((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(1L)) {
                     getEmbeddedStreamsFromMeta()
-                }?.let { embeddedAddonStreams ->
+                }
+                if (embeddedAddonStreams != null && embeddedAddonStreams.streams.any(MoonCatSourcePolicy::visibleSource)) {
                     Log.d(
                         TAG,
                         "Using embedded video streams for videoId=$videoId count=${embeddedAddonStreams.streams.size}"
                     )
-                    providerSearchFinished = true
-                    applySuccess(listOf(embeddedAddonStreams))
+                    applySuccess(listOf(embeddedAddonStreams), complete = true)
                     withTimeoutOrNull((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(1L)) {
                         sourceSelectionJob?.join()
                     }
@@ -695,8 +607,6 @@ class StreamScreenViewModel @Inject constructor(
                 alreadySucceededNames = alreadySucceededNames
             )
 
-            var lastSuccessData: List<AddonStreams>? = null
-            var autoSelectTriggered = false
             var debridPreparationLaunched = false
 
             fun launchDirectDebridPreparationIfNeeded(streamGroups: List<AddonStreams>) {
@@ -756,11 +666,8 @@ class StreamScreenViewModel @Inject constructor(
                 ).collect { result ->
                     when (result) {
                         is NetworkResult.Success -> {
-                            lastSuccessData = result.data
                             applySuccess(result.data)
                             launchDirectDebridPreparationIfNeeded(result.data)
-
-
                         }
                         is NetworkResult.Error -> {
                             if (directAutoPlayFlowEnabledForSession) {
@@ -790,13 +697,7 @@ class StreamScreenViewModel @Inject constructor(
                         }
                     }
                 }
-                providerSearchFinished = true
                 selectionSnapshots.value = selectionSnapshots.value.copy(complete = true)
-                // All addons finished — run auto-select if not yet triggered
-                if (!autoSelectTriggered) {
-                    autoSelectTriggered = true
-                    lastSuccessData?.let { applySuccess(it) }
-                }
                 sourceSelectionJob?.join()
                 markRemainingSourceChipsAsError()
                 if (directAutoPlayFlowEnabledForSession && !resolvedAutoPlayTarget) {
@@ -823,7 +724,7 @@ class StreamScreenViewModel @Inject constructor(
             // autoplay overlay would otherwise stay visible indefinitely. Force a
             // teardown so the user lands in the manual stream list with whatever
             // results have already arrived.
-            if (directFlowActive) {
+            if (directFlowActive) launch {
                 delay((DIRECT_AUTOPLAY_HARD_TIMEOUT_MS - (android.os.SystemClock.elapsedRealtime() - searchStartedAt)).coerceAtLeast(0L))
                 // A resolved target that never actually started playback (e.g. a dead
                 // Reuse Last Link) leaves the loader up, since every earlier teardown is
@@ -843,26 +744,6 @@ class StreamScreenViewModel @Inject constructor(
                 )
                 if ((directAutoPlayFlowEnabledForSession && !resolvedAutoPlayTarget) || phantomStuck) {
                     Log.w(TAG, "Direct autoplay hard timeout reached; falling back to manual selection")
-                    lastSuccessData?.let {
-                        if (!autoSelectTriggered) {
-                            autoSelectTriggered = true
-                            applySuccess(it)
-                        }
-                    }
-                    // A bounded preload is only a speed hint. If it hasn't completed,
-                    // hand the best available torrent to the same player path used
-                    // by manual selection instead of abandoning autoplay.
-                    if (!resolvedAutoPlayTarget && !phantomStuck) {
-                        val fallback = com.nuvio.tv.core.mooncat.MoonCatSourcePolicy.rank(
-                            selectionSnapshots.value.candidates.filter { it.isTorrent() },
-                            playerSettings.preferredAudioLanguage, allow4k
-                        ).firstOrNull()
-                        if (fallback != null) {
-                            sourceSelectionJob?.cancel()
-                            resolvedAutoPlayTarget = true
-                            updateUiStateIfChanged { it.copy(autoPlayStream = fallback, error = null) }
-                        }
-                    }
                     if (!resolvedAutoPlayTarget || phantomStuck) {
                         directAutoPlayFlowEnabledForSession = false
                         autoPlayHandledForSession = true
@@ -1920,21 +1801,6 @@ class StreamScreenViewModel @Inject constructor(
         }
     }
 
-}
-
-private fun Stream.badgeMergeKey(): String {
-    infoHash?.lowercase()?.let { hash -> return "$addonName|$hash:${fileIdx ?: ""}" }
-    // Use the playable URL as primary key - but for streams without a playable URL
-    // (e.g. statistic/informational entries that only have externalUrl), fall back
-    // to name+title+description to avoid all such streams collapsing to one key.
-    val playableUrl = url ?: clientResolve?.let { resolve ->
-        resolve.stream?.raw?.filename ?: resolve.infoHash
-    }
-    if (playableUrl != null) {
-        val nameSuffix = name?.takeIf { it.isNotBlank() }?.let { "|$it" } ?: ""
-        return "$addonName|$playableUrl$nameSuffix"
-    }
-    return "$addonName|${name}:${title}:${description?.hashCode() ?: 0}"
 }
 
 data class StreamPlaybackInfo(

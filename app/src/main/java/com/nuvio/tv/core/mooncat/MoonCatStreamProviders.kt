@@ -6,6 +6,9 @@ import java.util.Locale
 
 /** Query all enabled secure configured addons; do not hard-block any provider by name. */
 object MoonCatStreamProviders {
+    fun isTorrentio(addon: Addon): Boolean =
+        runCatching { URI(addon.baseUrl).host }.getOrNull().equals("torrentio.strem.fun", ignoreCase = true)
+
     fun isAllowed(addon: Addon): Boolean {
         if (!addon.enabled) return false
         val uri = runCatching { URI(addon.baseUrl) }.getOrNull() ?: return false
