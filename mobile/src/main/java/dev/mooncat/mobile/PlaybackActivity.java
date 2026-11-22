@@ -32,7 +32,7 @@ import org.json.JSONObject;
 import java.util.HashMap;
 import java.util.Map;
 
-@UnstableApi
+@androidx.annotation.OptIn(markerClass = UnstableApi.class)
 public class PlaybackActivity extends Activity implements Player.Listener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable startTimeout = this::tryNext;

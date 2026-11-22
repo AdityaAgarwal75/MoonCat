@@ -14,6 +14,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.window.OnBackInvokedDispatcher;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
@@ -65,6 +66,10 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new Client());
         layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
         setContentView(layout);
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
+        }
         if (savedState == null || web.restoreState(savedState) == null) web.loadUrl(APP_URL);
     }
 

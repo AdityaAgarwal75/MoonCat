@@ -22,6 +22,7 @@ val prepareClientAssets by tasks.registering(Exec::class) {
 android {
     namespace = "dev.mooncat.mobile"
     compileSdk = 36
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "dev.mooncat.mobile.v3"

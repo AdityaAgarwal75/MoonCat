@@ -293,11 +293,7 @@ function hero(item, actions, detail = false) {
       "div",
       { class: "hero-copy" },
       el("p", { class: "metadata" }, info),
-      el(
-        "h1",
-        { class: detail ? "" : "hero-title" },
-        item.name,
-      ),
+      el("h1", { class: detail ? "" : "hero-title" }, item.name),
       item.description && el("p", {}, item.description),
       el("div", { class: "actions" }, actions),
     ),
@@ -1309,7 +1305,11 @@ function play(media, streams) {
       playerCleanup?.();
       return;
     }
-    if (event.target !== video) return;
+    if (
+      event.target instanceof Element &&
+      event.target.closest("button,input,select,textarea")
+    )
+      return;
     if (
       ["ArrowLeft", "ArrowRight"].includes(event.key) &&
       !media.live &&
@@ -1325,16 +1325,21 @@ function play(media, streams) {
       );
     }
     if (event.key.toLowerCase() === "f") fullscreen.click();
+    if (event.code === "Space" && event.target !== video) {
+      event.preventDefault();
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+    }
   }
-  document.addEventListener("keydown", controls);
+  document.addEventListener("keydown", controls, true);
   main.hidden = true;
   main.after(shell);
-  close.focus();
+  video.focus({ preventScroll: true });
   playerCleanup = () => {
     record(media, lastPosition, video.duration, ended);
     serial += 1;
     reset();
-    document.removeEventListener("keydown", controls);
+    document.removeEventListener("keydown", controls, true);
     shell.remove();
     main.hidden = false;
     window.scrollTo(0, restore);

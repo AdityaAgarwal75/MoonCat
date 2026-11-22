@@ -15,6 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/jchv/go-webview2"
+	"github.com/jchv/go-webview2/webviewloader"
 	"golang.org/x/sys/windows"
 )
 
@@ -26,17 +27,23 @@ const runtimeDownload = "https://developer.microsoft.com/en-us/microsoft-edge/we
 var user32 = windows.NewLazySystemDLL("user32.dll")
 var messageBox = user32.NewProc("MessageBoxW")
 var shellExecute = windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteW")
+var errMissingRuntime = errors.New("MoonCat needs the Microsoft Edge WebView2 Evergreen Runtime")
 
 func main() {
 	runtime.LockOSThread()
 	if err := launch(); err != nil {
-		if message(err.Error()+"\n\nOpen the WebView2 Runtime download page?", 0x34) == 6 {
+		if !errors.Is(err, errMissingRuntime) {
+			message(err.Error(), 0x10)
+		} else if message(err.Error()+"\n\nOpen the WebView2 Runtime download page?", 0x34) == 6 {
 			_ = openBrowser(runtimeDownload)
 		}
 	}
 }
 
 func launch() error {
+	if version, err := webviewloader.GetInstalledVersion(); err != nil || version == "" {
+		return errMissingRuntime
+	}
 	config, err := os.UserConfigDir()
 	if err != nil {
 		return fmt.Errorf("MoonCat could not locate the Windows profile folder: %w", err)
@@ -64,7 +71,7 @@ func launch() error {
 		WindowOptions: webview2.WindowOptions{Title: "MoonCat", Width: 1100, Height: 720, Center: true, IconId: 1},
 	})
 	if view == nil {
-		return errors.New("MoonCat needs the Microsoft Edge WebView2 Evergreen Runtime")
+		return errors.New("MoonCat could not initialize its playback window")
 	}
 	defer view.Destroy()
 	view.SetSize(390, 430, webview2.HintMin)
