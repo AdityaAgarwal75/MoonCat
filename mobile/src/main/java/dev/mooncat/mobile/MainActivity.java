@@ -1,115 +1,246 @@
 package dev.mooncat.mobile;
 
 import android.app.Activity;
-import android.os.Bundle;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
-import android.view.Gravity;
-import android.view.View;
-import android.widget.*;
-import org.json.*;
-import java.io.*;
-import java.net.*;
-import java.util.*;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.WindowInsets;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
+import org.json.JSONObject;
+import org.json.JSONTokener;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    final int BG=Color.rgb(8,12,28), ACCENT=Color.rgb(164,144,248), FG=Color.WHITE;
-    LinearLayout root, page, nav;
-    JSONArray studios;
-    VideoView video;
-    String[] names={"DD News","Aaj Tak","ABP News","India Today"};
-    String[] urls={
-       "https://d3qs3d2rkhfqrt.cloudfront.net/out/v1/0811cd8c37ca4c409d5385a6cd2fa18b/index.m3u8",
-       "https://feeds.intoday.in/aajtak/api/aajtakhd/master.m3u8",
-       "https://d1rc86nwwc9fag.cloudfront.net/vglive-sk-472500/abpnews/master.m3u8",
-       "https://d1rc86nwwc9fag.cloudfront.net/vglive-sk-293160/master.m3u8"
-    };
-    int dp(int x){return (int)(x*getResources().getDisplayMetrics().density+.5f);}
-    GradientDrawable bg(int color, int radius) {
-       GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;
-    }
-    @Override public void onCreate(Bundle saved){
-       super.onCreate(saved);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
-       try{ByteArrayOutputStream b=new ByteArrayOutputStream();InputStream in=getAssets().open("studios.json");byte[] c=new byte[8192];int n;while((n=in.read(c))>0)b.write(c,0,n);studios=new JSONArray(b.toString("UTF-8"));}catch(Exception e){studios=new JSONArray();}
-       home();
-    }
-    TextView text(String t,int size,int color,boolean bold){
-       TextView v=new TextView(this);v.setText(t);v.setTextSize(size);v.setTextColor(color);v.setPadding(dp(6),dp(7),dp(6),dp(7));
-       if(bold)v.setTypeface(null,Typeface.BOLD);return v;
-    }
-    void base(String section,boolean tabs){
-       root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);
-       LinearLayout bar=new LinearLayout(this);bar.setPadding(dp(14),dp(13),dp(14),dp(9));bar.setGravity(Gravity.CENTER_VERTICAL);
-       ImageView icon=new ImageView(this);icon.setImageResource(R.drawable.mooncat_icon);bar.addView(icon,new LinearLayout.LayoutParams(dp(44),dp(44)));
-       TextView brand=text("MoonCat",25,FG,true);bar.addView(brand);root.addView(bar);
-       ScrollView scroll=new ScrollView(this);page=new LinearLayout(this);page.setPadding(dp(18),dp(8),dp(18),dp(24));page.setOrientation(LinearLayout.VERTICAL);
-       scroll.addView(page);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-       if(tabs){nav=new LinearLayout(this);nav.setPadding(dp(4),dp(8),dp(4),dp(10));nav.setBackgroundColor(Color.rgb(18,24,45));
-          tab("Home",()->home());tab("Studios",()->studios());tab("News",()->news());root.addView(nav);}
-       page.addView(text(section,24,FG,true));
-    }
-    void tab(String label,Runnable action){
-       TextView t=text(label,15,FG,true);t.setGravity(Gravity.CENTER);t.setOnClickListener(v->action.run());
-       nav.addView(t,new LinearLayout.LayoutParams(0,dp(45),1));
-    }
-    void action(LinearLayout target,String name,String subtitle,Runnable runnable){
-       LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);card.setPadding(dp(16),dp(13),dp(13),dp(13));
-       card.setBackground(bg(Color.rgb(22,28,49),16));
-       TextView title=text(name,19,FG,true);card.addView(title);
-       if(subtitle!=null)card.addView(text(subtitle,13,Color.rgb(186,193,218),false));
-       card.setOnClickListener(v->runnable.run());
-       LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);target.addView(card,lp);
-    }
-    void home(){
-       stop();base("Discover",true);
-       page.addView(text("Explore films and series by studio, or watch live news.",15,Color.LTGRAY,false));
-       action(page,"Studios & Franchises","Marvel, DC, Harry Potter, HBO, Paramount and more",()->studios());
-       action(page,"Live News","Inside MoonCat — Hindi and English channels",()->news());
-       page.addView(text("Featured collections",20,ACCENT,true));
-       for(int i=0;i<Math.min(5,studios.length());i++){final int j=i;JSONObject o=studios.optJSONObject(i);
-           action(page,o.optString("name"),"Movies and series",()->studio(j));}
-    }
-    void studios(){
-       stop();base("Studios & Collections",true);
-       for(int i=0;i<studios.length();i++){final int j=i;JSONObject s=studios.optJSONObject(i);
-           action(page,s.optString("name"),s.optJSONArray("works").length()+" featured titles",()->studio(j));}
-    }
-    void studio(int index){
-       JSONObject s=studios.optJSONObject(index);if(s==null)return;
-       base(s.optString("name"),true);
-       action(page,"← All Studios",null,()->studios());
-       JSONArray items=s.optJSONArray("works");
-       for(int i=0;i<items.length();i++){JSONObject item=items.optJSONObject(i);
-           if(item==null)continue;
-           action(page,item.optString("title"),item.optString("type").equals("series")?"Series":"Movie",()->detail(item));}
-    }
-    void detail(JSONObject item){
-       base(item.optString("title"),true);
-       page.addView(text(item.optString("type").toUpperCase(Locale.ROOT),14,ACCENT,true));
-       page.addView(text("IMDb ID: "+item.optString("imdb"),14,Color.LTGRAY,false));
-       page.addView(text("Browse this title in MoonCat. Movie and series playback source integration is not yet available in the mobile beta.",16,FG,false));
-       action(page,"Browse more collections",null,()->studios());
-    }
-    void news(){
-       stop();base("Live News",true);
-       page.addView(text("Streams play within this app. Channel availability depends on broadcasters.",14,Color.LTGRAY,false));
-       for(int i=0;i<names.length;i++){final int j=i;action(page,names[i],"Tap to watch live",()->play(j));}
-    }
-    void play(int ix){
-       stop();base(names[ix]+" · LIVE",false);
-       LinearLayout controls=new LinearLayout(this);
-       page.addView(text("Live channel — in-app playback",16,ACCENT,true));
-       video=new VideoView(this);video.setBackgroundColor(Color.BLACK);
-       page.addView(video,new LinearLayout.LayoutParams(-1,dp(260)));
-       MediaController mc=new MediaController(this);mc.setAnchorView(video);video.setMediaController(mc);
-       video.setOnErrorListener((mp,what,extra)->{page.addView(text("Stream unavailable. Try another channel.",15,Color.RED,false));return true;});
-       try{video.setVideoURI(android.net.Uri.parse(urls[ix]));video.start();}
-       catch(Exception e){page.addView(text("Unable to play stream.",16,Color.RED,false));}
-       action(page,"← Back to News",null,()->news());
-    }
-    void stop(){if(video!=null){try{video.stopPlayback();}catch(Exception e){}video=null;}}
-    @Override public void onBackPressed(){if(video!=null)news();else home();}
-    @Override protected void onStop(){super.onStop();stop();}
-}
+    private static final String APP_HOST = "mooncat.invalid";
+    private static final String APP_URL = "https://" + APP_HOST + "/index.html";
+    private static final int PLAYBACK = 30;
+    private static final int MAX_JSON_BYTES = 5 * 1024 * 1024;
+    private final ExecutorService requests = Executors.newFixedThreadPool(5);
+    private WebView web;
 
+    @Override
+    public void onCreate(Bundle savedState) {
+        super.onCreate(savedState);
+        getWindow().setStatusBarColor(Color.rgb(16, 14, 25));
+        getWindow().setNavigationBarColor(Color.rgb(16, 14, 25));
+        FrameLayout layout = new FrameLayout(this);
+        layout.setBackgroundColor(Color.rgb(16, 14, 25));
+        if (Build.VERSION.SDK_INT >= 35) {
+            layout.setOnApplyWindowInsetsListener((view, insets) -> {
+                var safe = insets.getInsets(WindowInsets.Type.systemBars() |
+                    WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+                return insets;
+            });
+        }
+
+        web = new WebView(this);
+        web.setBackgroundColor(Color.rgb(8, 8, 14));
+        web.getSettings().setJavaScriptEnabled(true);
+        web.getSettings().setDomStorageEnabled(true);
+        web.getSettings().setAllowFileAccess(false);
+        web.getSettings().setAllowContentAccess(false);
+        web.getSettings().setMediaPlaybackRequiresUserGesture(true);
+        web.addJavascriptInterface(new AppBridge(), "MoonCatAndroid");
+        web.setWebViewClient(new Client());
+        layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
+        setContentView(layout);
+        if (savedState == null || web.restoreState(savedState) == null) web.loadUrl(APP_URL);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        web.saveState(outState);
+    }
+
+    @Override
+    public void onBackPressed() {
+        web.evaluateJavascript(
+            "typeof mooncatBack === 'function' && mooncatBack()",
+            handled -> { if (!"true".equals(handled)) super.onBackPressed(); });
+    }
+
+    @Override
+    protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request != PLAYBACK || result != RESULT_OK || data == null) return;
+        String token = JSONObject.quote(data.getStringExtra("token"));
+        double position = data.getDoubleExtra("position", 0);
+        double duration = data.getDoubleExtra("duration", 0);
+        boolean complete = data.getBooleanExtra("complete", false);
+        web.evaluateJavascript("window.__mooncatProgress(" + token + "," + position + "," +
+            duration + "," + complete + ")", null);
+    }
+
+    @Override
+    protected void onDestroy() {
+        requests.shutdownNow();
+        web.removeJavascriptInterface("MoonCatAndroid");
+        ((FrameLayout) web.getParent()).removeView(web);
+        web.destroy();
+        super.onDestroy();
+    }
+
+    private class Client extends WebViewClient {
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            return !request.isForMainFrame() || !isAppHost(request.getUrl()) ||
+                !"/index.html".equals(request.getUrl().getPath());
+        }
+
+        @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+            Uri url = request.getUrl();
+            if (!isAppHost(url)) return request.isForMainFrame() ? unavailable() : null;
+            String path = url.getPath();
+            if (path == null || !path.matches("/[a-z0-9_./-]+") || path.contains("..")) return unavailable();
+            try {
+                String type = path.endsWith(".html") ? "text/html" :
+                    path.endsWith(".css") ? "text/css" :
+                    path.endsWith(".js") ? "text/javascript" :
+                    path.endsWith(".json") ? "application/json" :
+                    path.endsWith(".png") ? "image/png" : "image/webp";
+                String encoding = type.startsWith("image/") ? null : "UTF-8";
+                return new WebResourceResponse(type, encoding, 200, "OK",
+                    Collections.singletonMap("X-Content-Type-Options", "nosniff"), getAssets().open(path.substring(1)));
+            } catch (IOException ignored) {
+                return unavailable();
+            }
+        }
+    }
+
+    private static boolean isAppHost(Uri uri) {
+        return "https".equals(uri.getScheme()) && APP_HOST.equals(uri.getHost()) && uri.getPort() == -1;
+    }
+
+    private static WebResourceResponse unavailable() {
+        return new WebResourceResponse("text/plain", "UTF-8", 404, "Not found",
+            Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
+    }
+
+    private class AppBridge {
+        @JavascriptInterface
+        public void request(long id, String url) {
+            if (isDestroyed()) return;
+            requests.execute(() -> {
+                try {
+                    String payload = fetchJson(url);
+                    deliver(id, payload, "null");
+                } catch (IOException | IllegalArgumentException error) {
+                    deliver(id, "null", JSONObject.quote("The provider is unavailable or returned an invalid response."));
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void play(String configuration) {
+            if (configuration == null || configuration.length() > 100_000) return;
+            runOnUiThread(() -> {
+                Intent playback = new Intent(MainActivity.this, PlaybackActivity.class);
+                playback.putExtra("configuration", configuration);
+                startActivityForResult(playback, PLAYBACK);
+            });
+        }
+
+        @JavascriptInterface
+        public void openExternal(String url) {
+            if (!validHttps(url)) return;
+            runOnUiThread(() -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (ActivityNotFoundException ignored) {
+                    android.widget.Toast.makeText(MainActivity.this, "No browser is available.", android.widget.Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+    }
+
+    private void deliver(long id, String value, String error) {
+        runOnUiThread(() -> {
+            if (!isDestroyed()) web.evaluateJavascript(
+                "window.__mooncatResult(" + id + "," + value + "," + error + ")", null);
+        });
+    }
+
+    static boolean validHttps(String value) {
+        if (value == null || value.length() > 8192) return false;
+        try {
+            URI uri = URI.create(value);
+            String host = uri.getHost();
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || host == null || uri.getUserInfo() != null) return false;
+            host = host.toLowerCase(Locale.ROOT).replaceFirst("\\.$", "");
+            return host.contains(".") && !host.contains(":") && !host.matches("[0-9.]+") &&
+                !host.endsWith(".localhost") && !host.endsWith(".local");
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+    }
+
+    private static String fetchJson(String target) throws IOException {
+        for (int redirect = 0; redirect <= 3; redirect++) {
+            if (!validHttps(target)) throw new IOException("Invalid HTTPS provider URL");
+            URI uri = URI.create(target);
+            for (InetAddress address : InetAddress.getAllByName(uri.getHost())) {
+                if (address.isAnyLocalAddress() || address.isLoopbackAddress() ||
+                    address.isLinkLocalAddress() || address.isSiteLocalAddress() || address.isMulticastAddress()) {
+                    throw new IOException("Private network address");
+                }
+            }
+            HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+            try {
+                connection.setConnectTimeout(6_000);
+                connection.setReadTimeout(9_000);
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "MoonCat/3 Android");
+                int status = connection.getResponseCode();
+                if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null) throw new IOException("Invalid redirect");
+                    target = uri.resolve(location).toString();
+                    continue;
+                }
+                if (status != 200) throw new IOException("Provider request failed");
+                try (InputStream stream = connection.getInputStream()) {
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = stream.read(buffer)) != -1) {
+                        if (bytes.size() + read > MAX_JSON_BYTES) throw new IOException("Provider response too large");
+                        bytes.write(buffer, 0, read);
+                    }
+                    String raw = bytes.toString(StandardCharsets.UTF_8.name());
+                    Object value = new JSONTokener(raw).nextValue();
+                    if (!(value instanceof JSONObject)) throw new IOException("Invalid provider response");
+                    return value.toString().replace("\u2028", "\\u2028").replace("\u2029", "\\u2029");
+                } catch (org.json.JSONException error) {
+                    throw new IOException("Invalid provider response", error);
+                }
+            } finally {
+                connection.disconnect();
+            }
+        }
+        throw new IOException("Too many redirects");
+    }
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https:; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="theme-color" content="#08080e" />
+    <title>MoonCat</title>
+    <link rel="stylesheet" href="app.css" />
+    <script defer src="core.js"></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="chrome">
+      <a class="brand" href="#/home"
+        ><img src="logos/mooncat.png" alt="" /><span>MoonCat</span></a
+      >
+      <nav id="nav" aria-label="Main navigation"></nav>
+      <button class="top-search" data-route="search" type="button">
+        Search <kbd>Ctrl K</kbd>
+      </button>
+    </header>
+    <main id="main" tabindex="-1" aria-busy="true">
+      <p class="status">Loading MoonCat…</p>
+    </main>
+    <div
+      id="notice"
+      class="notice"
+      role="status"
+      aria-live="polite"
+      hidden
+    ></div>
+  </body>
+</html>

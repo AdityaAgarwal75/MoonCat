@@ -1,0 +1,82 @@
+name: MoonCat Android and Windows builds
+on:
+  push:
+    branches: [feature/mooncat-v3-android-windows]
+    paths: ['clients/**', 'mobile/**', 'desktop/**', 'app/src/main/assets/studios/**', 'scripts/prepare_client_assets.py', '.github/workflows/mooncat-clients.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build and verify Android APK
+        env:
+          KEYSTORE: ${{ secrets.MOONCAT_V2_KEYSTORE_BASE64 }}
+          MOONCAT_CLIENT_STORE_PASSWORD: ${{ secrets.MOONCAT_V2_KEYSTORE_PASSWORD }}
+          MOONCAT_CLIENT_KEY_ALIAS: ${{ secrets.MOONCAT_V2_KEY_ALIAS }}
+          CERT_SHA256: ${{ secrets.MOONCAT_V2_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          export MOONCAT_CLIENT_KEY_PASSWORD="$MOONCAT_CLIENT_STORE_PASSWORD"
+          mkdir dist
+          if [ -n "$KEYSTORE" ] && [ -n "$MOONCAT_CLIENT_STORE_PASSWORD" ] && [ -n "$MOONCAT_CLIENT_KEY_ALIAS" ] && [[ "$CERT_SHA256" =~ ^[a-f0-9]{64}$ ]]; then
+            export MOONCAT_CLIENT_KEYSTORE="$RUNNER_TEMP/mooncat-client.jks"
+            trap 'rm -f "$MOONCAT_CLIENT_KEYSTORE"' EXIT
+            umask 077
+            printf '%s' "$KEYSTORE" | base64 --decode > "$MOONCAT_CLIENT_KEYSTORE"
+            ./gradlew -p mobile assembleRelease lintRelease --no-daemon --max-workers=3
+            APK="$(find mobile/build/outputs/apk/release -name '*.apk' -print -quit)"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | grep -F "Signer #1 certificate SHA-256 digest: $CERT_SHA256"
+            cp "$APK" dist/MoonCat-3.0.0-alpha.4.1-Android.apk
+          else
+            ./gradlew -p mobile assembleDebug lintDebug --no-daemon --max-workers=3
+            APK="$(find mobile/build/outputs/apk/debug -name '*.apk' -print -quit)"
+            cp "$APK" dist/MoonCat-3.0.0-alpha.4.1-Android-Preview.apk
+          fi
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/mooncat-client-badging.txt"
+          grep -F "versionName='3.0.0-alpha.4.1'" "$RUNNER_TEMP/mooncat-client-badging.txt"
+          (cd dist && sha256sum *.apk > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-Android
+          path: dist/
+          if-no-files-found: error
+  windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: desktop/go.mod
+          cache-dependency-path: desktop/go.sum
+      - name: Build and verify Windows x64 executable
+        run: |
+          set -euo pipefail
+          python3 desktop/prepare.py
+          mkdir dist
+          cd desktop
+          go test ./...
+          go run github.com/akavel/rsrc@v0.10.2 -arch amd64 -ico mooncat.ico -o mooncat_windows_amd64.syso
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w -H windowsgui' -o ../dist/MoonCat-3.0.0-alpha.4.1-Windows-x64.exe .
+          cd ../dist
+          file *.exe | grep 'PE32+ executable'
+          sha256sum *.exe > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MoonCat-Windows-x64
+          path: dist/
+          if-no-files-found: error
