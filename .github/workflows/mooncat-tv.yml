@@ -1,7 +1,7 @@
 name: MoonCat TV validation and APK
 on:
   push:
-    branches: [redesign/mooncat-v3, improve/superpowers-beta18, fix/source-selection-beta17, fix/fire-tv-beta16, main, fix/stream-recovery-beta11, improve/source-selection-beta7, work/mooncat-v2, work/mooncat-fast-start, fix/fire-tv-update-signature-check, fix/autoplay-fallback]
+    branches: [feature/mooncat-phone-tv-alpha5, redesign/mooncat-v3, improve/superpowers-beta18, fix/source-selection-beta17, fix/fire-tv-beta16, main, fix/stream-recovery-beta11, improve/source-selection-beta7, work/mooncat-v2, work/mooncat-fast-start, fix/fire-tv-update-signature-check, fix/autoplay-fallback]
     tags: ['v2*']
     paths: ['app/**', 'gradle/**', 'gradle.properties', 'build.gradle.kts', 'settings.gradle.kts', 'scripts/**', '.github/workflows/mooncat-tv.yml']
   pull_request:
@@ -67,6 +67,9 @@ jobs:
               with open(os.environ['GITHUB_ENV'],'a') as f: f.write('CI_USE_DEBUG_SIGNING=false\n')
           with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('preview='+str(not trusted).lower()+'\n')
           PY
+      - name: Load the shared account service
+        if: github.ref_name == 'feature/mooncat-phone-tv-alpha5'
+        run: python3 scripts/prepare_official_account_config.py local.properties
       - name: Build release and run vital lint
         if: github.event_name != 'pull_request'
         run: ./gradlew :app:assembleFullRelease -PmooncatPreview=${{ steps.identity.outputs.preview }} --no-daemon --max-workers=2 --console=plain

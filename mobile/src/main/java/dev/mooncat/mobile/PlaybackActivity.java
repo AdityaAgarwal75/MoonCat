@@ -14,6 +14,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -37,6 +38,7 @@ public class PlaybackActivity extends Activity implements Player.Listener {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable startTimeout = this::tryNext;
     private JSONObject configuration;
+    private MobileTorrentPlayback torrentPlayback;
     private JSONArray streams;
     private int current;
     private ExoPlayer player;
@@ -45,6 +47,8 @@ public class PlaybackActivity extends Activity implements Player.Listener {
     private TextView status;
     private Button retry;
     private boolean started;
+    private boolean resumed;
+    private boolean startOnResume;
     private boolean complete;
     private boolean live;
     private long position;
@@ -65,6 +69,7 @@ public class PlaybackActivity extends Activity implements Player.Listener {
             return;
         }
         live = configuration.optBoolean("live");
+        torrentPlayback = new MobileTorrentPlayback(this);
         position = (long) (configuration.optDouble("resume", 0) * 1000);
         if (savedInstanceState != null) {
             current = savedInstanceState.getInt("current");
@@ -103,6 +108,12 @@ public class PlaybackActivity extends Activity implements Player.Listener {
         title.setMaxLines(2);
         heading.addView(close);
         heading.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        if (!live && new TvConnection(this).paired()) {
+            Button handoff = new Button(this);
+            handoff.setText("Play on TV");
+            handoff.setOnClickListener(view -> sendToTv(handoff));
+            heading.addView(handoff);
+        }
         frame.addView(heading, new FrameLayout.LayoutParams(-1, -2, Gravity.TOP));
 
         LinearLayout feedback = new LinearLayout(this);
@@ -140,18 +151,34 @@ public class PlaybackActivity extends Activity implements Player.Listener {
         heading.setVisibility(View.VISIBLE);
         retry.setVisibility(View.GONE);
         JSONObject stream = streams.optJSONObject(current);
-        if (stream == null || !MainActivity.validHttps(stream.optString("url"))) {
+        if (stream == null) {
             tryNext();
             return;
         }
         status.setVisibility(View.VISIBLE);
-        status.setText("Connecting to " + stream.optString("provider", "source") + "…");
+        String provider = stream.optString("provider", "source");
+        String url = stream.optString("url");
+        JSONObject torrent = stream.optJSONObject("torrent");
+        if (MainActivity.validHttps(url)) {
+            status.setText("Connecting to " + provider + "…");
+            playSource(url, playerHeaders(stream.optJSONObject("headers")), stream.optBoolean("hls"));
+        } else if (torrent != null) {
+            status.setText("Finding peers for " + provider + "…");
+            torrentPlayback.open(torrent, localUrl -> {
+                status.setText("Buffering " + provider + "…");
+                playSource(localUrl, new HashMap<>(), false);
+            }, this::tryNext);
+        } else {
+            tryNext();
+        }
+    }
 
+    private void playSource(String url, Map<String, String> headers, boolean hls) {
         DefaultHttpDataSource.Factory data = new DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 MoonCat/3")
             .setConnectTimeoutMs(8_000)
             .setReadTimeoutMs(14_000)
-            .setDefaultRequestProperties(playerHeaders(stream.optJSONObject("headers")));
+            .setDefaultRequestProperties(headers);
         ExoPlayer fresh = new ExoPlayer.Builder(this)
             .setMediaSourceFactory(new DefaultMediaSourceFactory(data))
             .setSeekBackIncrementMs(10_000)
@@ -165,12 +192,48 @@ public class PlaybackActivity extends Activity implements Player.Listener {
             .setPreferredAudioLanguages(english ? "en" : "hi", english ? "hi" : "en")
             .setMaxVideoSize(1920, 1080).build());
 
-        MediaItem.Builder media = new MediaItem.Builder().setUri(stream.optString("url"));
-        if (stream.optBoolean("hls")) media.setMimeType(MimeTypes.APPLICATION_M3U8);
+        MediaItem.Builder media = new MediaItem.Builder().setUri(url);
+        if (hls) media.setMimeType(MimeTypes.APPLICATION_M3U8);
         fresh.setMediaItem(media.build(), live ? C.TIME_UNSET : Math.max(0, position));
         fresh.prepare();
-        fresh.play();
-        handler.postDelayed(startTimeout, 19_000);
+        if (resumed) startPlayback(fresh);
+        else startOnResume = true;
+    }
+
+    private void startPlayback(ExoPlayer ready) {
+        ready.play();
+        if (!started) handler.postDelayed(startTimeout, 19_000);
+    }
+
+    private void sendToTv(Button action) {
+        snapshot();
+        JSONObject request = new JSONObject();
+        try {
+            for (String key : new String[]{"contentId", "videoId", "type", "title", "season", "episode", "episodeTitle"}) {
+                request.put(key, configuration.opt(key));
+            }
+            request.put("positionMs", Math.max(0L, position));
+        } catch (JSONException error) {
+            Toast.makeText(this, "Could not send this title.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        action.setEnabled(false);
+        new Thread(() -> {
+            String message;
+            try {
+                new TvConnection(this).send(request);
+                message = null;
+            } catch (Exception error) {
+                message = error.getMessage() == null ? "Could not reach the TV." : error.getMessage();
+            }
+            String failure = message;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                action.setEnabled(true);
+                if (failure == null && player != null) player.pause();
+                Toast.makeText(this, failure == null ? "TV is finding a source." : failure, Toast.LENGTH_LONG).show();
+            });
+        }, "mooncat-tv-handoff").start();
     }
 
     private Map<String, String> playerHeaders(JSONObject object) {
@@ -193,16 +256,17 @@ public class PlaybackActivity extends Activity implements Player.Listener {
             openCurrent();
             return;
         }
-        status.setText("This stream could not play. Retry or go back to choose another source.");
+        releasePlayer();
+        status.setText("This source could not start. Retry or choose another source.");
         status.setVisibility(View.VISIBLE);
         retry.setVisibility(View.VISIBLE);
         heading.setVisibility(View.VISIBLE);
-        if (player != null) player.pause();
     }
 
     @Override
     public void onPlayerError(PlaybackException error) {
-        handler.post(this::tryNext);
+        ExoPlayer failedPlayer = player;
+        handler.post(() -> { if (player == failedPlayer && !isFinishing()) tryNext(); });
     }
 
     @Override
@@ -227,17 +291,35 @@ public class PlaybackActivity extends Activity implements Player.Listener {
 
     private void releasePlayer() {
         handler.removeCallbacks(startTimeout);
-        if (player == null) return;
-        snapshot();
-        playerView.setPlayer(null);
-        player.removeListener(this);
-        player.release();
-        player = null;
+        startOnResume = false;
+        if (player != null) {
+            snapshot();
+            playerView.setPlayer(null);
+            player.removeListener(this);
+            player.release();
+            player = null;
+        }
+        if (torrentPlayback != null) torrentPlayback.close();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        resumed = true;
+        if (startOnResume && player != null) {
+            startOnResume = false;
+            startPlayback(player);
+        }
     }
 
     @Override
     protected void onPause() {
-        if (player != null) player.pause();
+        resumed = false;
+        handler.removeCallbacks(startTimeout);
+        if (player != null) {
+            startOnResume = !started && player.getPlayWhenReady();
+            player.pause();
+        }
         snapshot();
         super.onPause();
     }

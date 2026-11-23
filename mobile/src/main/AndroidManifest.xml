@@ -1,11 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <application
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:allowBackup="false"
         android:label="MoonCat"
         android:usesCleartextTraffic="false"
-        android:icon="@drawable/mooncat_icon">
+        android:networkSecurityConfig="@xml/mooncat_network_security"
+        android:icon="@mipmap/mooncat_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"

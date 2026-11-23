@@ -31,6 +31,7 @@ def prepare(output):
     shutil.copyfile(ROOT / "branding/mooncat-logo.png", output / "logos/mooncat.png")
 
     source = (TV_UI / "collection/MooncatStudiosScreen.kt").read_text()
+    shutil.copyfile(TV / "res/drawable-nodpi/mooncat_mark_v102.webp", output / "logos/mooncat-phone.webp")
     studios = []
     for key, name, logo in re.findall(r'MooncatStudio\("([^"]+)", "([^"]+)", R.drawable.(\w+)\)', source):
         with gzip.open(TV / "assets/studios" / f"{key}.json.gz", "rt", encoding="utf-8") as stream:

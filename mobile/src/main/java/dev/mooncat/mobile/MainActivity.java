@@ -16,6 +16,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.window.OnBackInvokedDispatcher;
 import org.json.JSONObject;
+import com.google.zxing.integration.android.IntentIntegrator;
 import org.json.JSONTokener;
 
 import java.io.ByteArrayInputStream;
@@ -38,10 +39,14 @@ public class MainActivity extends Activity {
     private static final int MAX_JSON_BYTES = 5 * 1024 * 1024;
     private final ExecutorService requests = Executors.newFixedThreadPool(5);
     private WebView web;
+    private TvConnection tv;
+    private MoonCatAccount account;
 
     @Override
     public void onCreate(Bundle savedState) {
         super.onCreate(savedState);
+        tv = new TvConnection(this);
+        account = new MoonCatAccount(this, this::deliverAccountEvent);
         getWindow().setStatusBarColor(Color.rgb(16, 14, 25));
         getWindow().setNavigationBarColor(Color.rgb(16, 14, 25));
         FrameLayout layout = new FrameLayout(this);
@@ -63,6 +68,7 @@ public class MainActivity extends Activity {
         web.getSettings().setAllowContentAccess(false);
         web.getSettings().setMediaPlaybackRequiresUserGesture(true);
         web.addJavascriptInterface(new AppBridge(), "MoonCatAndroid");
+        web.addJavascriptInterface(account, "MoonCatAccountNative");
         web.setWebViewClient(new Client());
         layout.addView(web, new FrameLayout.LayoutParams(-1, -1));
         setContentView(layout);
@@ -89,6 +95,24 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        var scan = IntentIntegrator.parseActivityResult(request, result, data);
+        if (scan != null) {
+            if (scan.getContents() == null) {
+                tvFeedback("Pairing cancelled.");
+            } else if (account.scanCode(scan.getContents())) {
+                web.evaluateJavascript("window.mooncatOpenAccount?.()", null);
+            } else {
+                requests.execute(() -> {
+                    try {
+                        tv.pair(scan.getContents());
+                        tvFeedback("MoonCat TV paired.");
+                    } catch (Exception error) {
+                        tvFeedback(error.getMessage() == null ? "Could not pair with the TV." : error.getMessage());
+                    }
+                });
+            }
+            return;
+        }
         if (request != PLAYBACK || result != RESULT_OK || data == null) return;
         String token = JSONObject.quote(data.getStringExtra("token"));
         double position = data.getDoubleExtra("position", 0);
@@ -100,6 +124,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        account.close();
+        web.removeJavascriptInterface("MoonCatAccountNative");
         requests.shutdownNow();
         web.removeJavascriptInterface("MoonCatAndroid");
         ((FrameLayout) web.getParent()).removeView(web);
@@ -144,7 +170,53 @@ public class MainActivity extends Activity {
             Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
     }
 
+    private void deliverAccountEvent(String json) {
+        runOnUiThread(() -> {
+            if (!isDestroyed() && web != null) web.evaluateJavascript("window.__mooncatAccountEvent(" + json + ")", null);
+        });
+    }
+
+    private void tvFeedback(String message) {
+        runOnUiThread(() -> {
+            if (!isDestroyed()) web.evaluateJavascript("window.__mooncatTvFeedback(" + JSONObject.quote(message) + ")", null);
+        });
+    }
+
     private class AppBridge {
+        @JavascriptInterface
+        public boolean hasTv() {
+            return tv.paired();
+        }
+
+        @JavascriptInterface
+        public void scanTv() {
+            runOnUiThread(() -> new IntentIntegrator(MainActivity.this)
+                .setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
+                .setPrompt("Scan the QR shown under Phone pairing on your TV")
+                .setBeepEnabled(false)
+                .setOrientationLocked(false)
+                .initiateScan());
+        }
+
+        @JavascriptInterface
+        public void forgetTv() {
+            tv.forget();
+            tvFeedback("MoonCat TV removed.");
+        }
+
+        @JavascriptInterface
+        public void sendTv(String payload) {
+            if (payload == null || payload.length() > 2048 || isDestroyed()) return;
+            requests.execute(() -> {
+                try {
+                    tv.send(new JSONObject(payload));
+                    tvFeedback("Sent to MoonCat TV. Your TV is finding a source.");
+                } catch (Exception error) {
+                    tvFeedback(error.getMessage() == null ? "Could not reach your TV." : error.getMessage());
+                }
+            });
+        }
+
         @JavascriptInterface
         public void request(long id, String url) {
             if (isDestroyed()) return;

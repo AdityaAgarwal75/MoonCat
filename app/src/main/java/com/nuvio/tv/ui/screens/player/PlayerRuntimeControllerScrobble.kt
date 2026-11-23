@@ -10,7 +10,8 @@ import com.nuvio.tv.data.local.toTrackPreference
 internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
     url: String,
     headers: Map<String, String>,
-    loadSavedProgress: Boolean
+    loadSavedProgress: Boolean,
+    handoffPositionMs: Long? = null
 ) {
     val playbackRequest = PlayerMediaSourceFactory.normalizePlaybackRequest(url, headers)
     val playbackUrl = playbackRequest.url
@@ -103,10 +104,10 @@ internal fun PlayerRuntimeController.preparePlaybackBeforeStart(
         // callback fired before the DB read completed, causing the resume
         // seek to be silently skipped — the player would start from 0:00
         // or hang in buffering after a late seek.
-        val partyPositionMs = partyResumePositionMs()
-        if (partyPositionMs != null) {
+        val startPositionMs = handoffPositionMs ?: partyResumePositionMs()
+        if (startPositionMs != null) {
             pendingResumeProgress = null
-            _uiState.update { it.copy(pendingSeekPosition = partyPositionMs) }
+            _uiState.update { it.copy(pendingSeekPosition = startPositionMs) }
         } else if (loadSavedProgress) {
             recordLoadingDiagnosticEvent(
                 phase = "loading_saved_progress",

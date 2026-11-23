@@ -37,7 +37,8 @@ internal data class PlayerNavigationArgs(
     val rememberedAudioName: String?,
     val launchStartedAtMs: Long?,
     val profileId: Int?,
-    val audioDelayMs: Int? = null
+    val audioDelayMs: Int? = null,
+    val handoffPositionMs: Long? = null
 ) {
     val torrentTrackers: List<String>
         get() {
@@ -98,7 +99,9 @@ internal data class PlayerNavigationArgs(
                 rememberedAudioName = decodedOrNull("rememberedAudioName"),
                 launchStartedAtMs = savedStateHandle.get<String>("launchStartedAtMs")?.toLongOrNull(),
                 profileId = savedStateHandle.get<String>("profileId")?.toIntOrNull(),
-                audioDelayMs = savedStateHandle.get<String>("audioDelayMs")?.toIntOrNull()
+                audioDelayMs = savedStateHandle.get<String>("audioDelayMs")?.toIntOrNull(),
+                handoffPositionMs = savedStateHandle.get<String>("handoffPositionMs")?.toLongOrNull()
+                    ?.takeIf { it in 0..com.nuvio.tv.core.handoff.PHONE_HANDOFF_MAX_POSITION_MS }
             )
         }
     }

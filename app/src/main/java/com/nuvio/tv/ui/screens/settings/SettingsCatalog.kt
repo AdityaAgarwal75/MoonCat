@@ -12,6 +12,7 @@ internal enum class SettingsCategory(val group: SettingsRailGroup) {
     ACCOUNT(SettingsRailGroup.YOU),
     PROFILES(SettingsRailGroup.YOU),
     WATCH_PARTY(SettingsRailGroup.YOU),
+    PHONE_HANDOFF(SettingsRailGroup.YOU),
     APPEARANCE(SettingsRailGroup.LOOK),
     LAYOUT(SettingsRailGroup.LOOK),
     CONTENT_DISCOVERY(SettingsRailGroup.WATCH),
@@ -28,12 +29,14 @@ internal fun visibleSettingsCategories(
     isPrimaryProfile: Boolean,
     isEssentialMode: Boolean,
     isDebugBuild: Boolean,
-    isWatchPartyAvailable: Boolean = false
+    isWatchPartyAvailable: Boolean = false,
+    isPhoneHandoffAvailable: Boolean = false
 ): List<SettingsCategory> = SettingsCategory.entries.filter { category ->
     when (category) {
         SettingsCategory.ACCOUNT,
         SettingsCategory.PROFILES -> isPrimaryProfile
         SettingsCategory.WATCH_PARTY -> isWatchPartyAvailable
+        SettingsCategory.PHONE_HANDOFF -> isPhoneHandoffAvailable && isPrimaryProfile
         SettingsCategory.DEBUG -> isDebugBuild && !isEssentialMode
         SettingsCategory.EXPERIENCE -> false
         else -> true

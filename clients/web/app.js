@@ -4,6 +4,15 @@ const main = document.querySelector("main");
 const nav = document.querySelector("#nav");
 const notice = document.querySelector("#notice");
 const android = window.MoonCatAndroid;
+const defaultTorrentio = {
+  name: "Torrentio",
+  url: "https://torrentio.strem.fun/qualityfilter=4k,brremux/manifest.json",
+  types: ["movie", "series"],
+};
+const tvGlyph = "M3 5h18v13H3z M8 21h8 M7 14c2-2 5-2 7 0 M8 16c1-1 3-1 4 0";
+let refreshTvPanel;
+let sourceSheet;
+let guestLibrary;
 const artwork = new Map();
 const studioData = new Map();
 const sourceRequests = new Map();
@@ -35,7 +44,7 @@ function el(tag, props = {}, ...children) {
       node.setAttribute(key, value === true ? "" : String(value));
   }
   for (const child of children.flat())
-    if (child !== null && child !== undefined) node.append(child);
+    if (child !== null && child !== undefined && child !== false) node.append(child);
   return node;
 }
 
@@ -92,7 +101,7 @@ function message(text) {
 }
 
 function persist() {
-  const json = JSON.stringify(settings);
+  const json = JSON.stringify(guestLibrary ? { ...settings, ...guestLibrary } : settings);
   if (android) {
     try {
       localStorage.setItem("mooncat-v3-client", json);
@@ -120,6 +129,10 @@ function navigate(route, { replace = false } = {}) {
 }
 
 function back() {
+  if (sourceSheet?.open) {
+    sourceSheet.close();
+    return true;
+  }
   if (routeHistory.length) {
     routeHistory.pop();
     history.back();
@@ -140,6 +153,7 @@ function currentRoute() {
 
 function renderNav(active) {
   for (const [id, item] of Object.entries(sections)) {
+    if (android && ["studios", "settings"].includes(id)) continue;
     if (nav.querySelector(`[data-route="${id}"]`)) continue;
     const link = el(
       "a",
@@ -288,13 +302,13 @@ function hero(item, actions, detail = false) {
   return el(
     "section",
     { class: "hero" },
-    art(item.background || item.poster, "hero-media", "", false),
+    art(android && !detail ? item.poster || item.background : item.background || item.poster, "hero-media", "", false),
     el(
       "div",
       { class: "hero-copy" },
       el("p", { class: "metadata" }, info),
       el("h1", { class: detail ? "" : "hero-title" }, item.name),
-      item.description && el("p", {}, item.description),
+      !android && item.description && el("p", {}, item.description),
       el("div", { class: "actions" }, actions),
     ),
   );
@@ -341,31 +355,38 @@ async function home(token) {
     ),
   );
   if (studioCards) main.append(studioCards);
+  if (android) main.append(el("div", {class: "browse-more"}, button("All collections ›", () => navigate("studios"))));
   const requests = ["movie", "series"].map((type) =>
     MoonCat.providerJson(
       MoonCat.pathFor(MoonCat.cinemeta, "catalog", type, "top"),
     ).then(MoonCat.titles),
   );
-  const [movies, series, fallback] = await Promise.allSettled([
-    ...requests,
-    getStudio("marvel"),
-  ]);
+  const fallback = getStudio("marvel").catch(() => []);
+  if (android) {
+    const local = await fallback;
+    if (token !== version) return;
+    const lead = local[0];
+    if (lead) content.replaceChildren(hero(lead, [button("View title", () => openDetail(lead), true)]));
+  }
+  const [movies, series, sampleResult] = await Promise.allSettled([...requests, fallback]);
   if (token !== version) return;
   const filmList = movies.value || [];
   const seriesList = series.value || [];
-  const sample = fallback.value || [];
+  const sample = sampleResult.value || [];
   const featured =
     filmList.find((item) => item.background) ||
     filmList[0] ||
     seriesList[0] ||
     sample[0];
   content.replaceChildren();
-  if (featured)
-    content.append(
-      hero(featured, [
-        button("View details", () => openDetail(featured), true),
-      ]),
-    );
+  if (featured) {
+    const saved = button(settings.list[featured.id] ? "✓ In My List" : "+ My List",
+      () => addToList(featured, saved));
+    content.append(hero(featured, [
+      button(android ? "View title" : "View details", () => openDetail(featured), true),
+      android ? saved : null,
+    ]));
+  }
   const playing = renderContinue();
   if (playing) content.append(playing);
   for (const [name, items] of [
@@ -654,11 +675,54 @@ function addToList(item, control) {
     "aria-pressed",
     settings.list[item.id] ? "true" : "false",
   );
+  if (guestLibrary) MoonCatAccount.setSaved(item, Boolean(settings.list[item.id]));
   persist();
+}
+
+window.__mooncatTvFeedback = (result) => {
+  message(result);
+  refreshTvPanel?.();
+};
+
+function playOnTv(media, position = 0) {
+  if (!android?.hasTv?.()) {
+    android?.scanTv?.();
+    return;
+  }
+  android.sendTv(JSON.stringify({
+    contentId: media.item.id, videoId: media.videoId, type: media.item.type, title: media.item.name,
+    season: media.season ?? null, episode: media.episodeNo ?? null, episodeTitle: media.episodeTitle ?? null,
+    positionMs: Math.round(position * 1000),
+  }));
+  message("Connecting to your TV…");
+}
+
+function tvButton(media) {
+  return button("Play on TV", () => playOnTv(media, settings.progress[media.videoId]?.position));
+}
+
+function tvPanel() {
+  const panel = el("section", { class: "stack connection-card" });
+  function update() {
+    const paired = android.hasTv?.();
+    panel.replaceChildren(
+      el("div", {class: "connection-title"}, icon(tvGlyph), el("h2", {}, "MoonCat TV")),
+      el("p", {class: "muted"}, paired ? "Paired · Keep MoonCat open on your TV." :
+        "On the TV, open Settings → Phone pairing. Keep both devices on the same Wi-Fi."),
+      el("div", {class: "actions"}, button(paired ? "Pair another TV" : "Scan TV QR", () => android.scanTv(), true),
+        paired ? button("Forget TV", () => android.forgetTv()) : null),
+    );
+  }
+  refreshTvPanel = update;
+  update();
+  return panel;
 }
 
 function renderSettings() {
   main.append(heading("Settings"));
+  if (android) main.append(tvPanel());
+  const accountPanel = typeof MoonCatAccount !== "undefined" && MoonCatAccount.render();
+  if (accountPanel) main.append(accountPanel);
   const label = el(
     "label",
     { class: "field", for: "language" },
@@ -785,7 +849,7 @@ function renderSettings() {
       el(
         "p",
         { class: "muted" },
-        "Movie and series playback requires a provider that returns direct HTTPS streams. Add the manifest from your provider or media server.",
+        android ? "Add a Stremio-compatible provider for direct video or torrent sources." : "Add a provider that returns direct HTTPS streams.",
       ),
       saved,
       form,
@@ -814,7 +878,15 @@ async function detail(type, id, episodeId, token) {
   list.setAttribute("aria-pressed", settings.list[id] ? "true" : "false");
   const actions = [list];
   const sources = el("section", { class: "stack episodes" });
+  const sheet = android ? el("dialog", {class:"source-sheet", "aria-label":"Playback sources"},
+    el("div", {class:"sheet-bar"}, el("span", {"aria-hidden":"true"}, "Sources"), button("Close", () => sheet.close())),
+    sources) : null;
+  if (sheet) {
+    sourceSheet = sheet;
+    sheet.addEventListener("close", () => { if (!sheet.open) sources.selection = null; });
+  }
   const directMedia = { item, videoId: id, label: "" };
+  let tvMedia = type === "movie" ? directMedia : null;
   if (type === "movie") {
     actions.unshift(
       button(
@@ -830,6 +902,7 @@ async function detail(type, id, episodeId, token) {
       item.videos.find((video) => settings.progress[video.id]) ||
       item.videos.find((video) => Number(video.season) > 0) ||
       item.videos[0];
+    tvMedia = episodeMedia(item, entry);
     actions.unshift(
       button(
         settings.progress[entry.id]
@@ -840,11 +913,15 @@ async function detail(type, id, episodeId, token) {
       ),
     );
   }
-  main.replaceChildren(
+  if (android && tvMedia) actions.splice(1, 0, tvButton(tvMedia));
+  const synopsis = android && item.description ? el("details", {class: "synopsis"},
+    el("summary", {}, "Synopsis"), el("p", {}, item.description)) : null;
+  main.replaceChildren(...[
     el("div", { class: "detail-top" }, button("‹ Back", back)),
     hero(item, actions, true),
-    sources,
-  );
+    synopsis,
+    sheet || sources,
+  ].filter(Boolean));
   main.classList.add("detail");
   if (type === "series") main.append(episodes(item, sources, episodeId));
 }
@@ -859,6 +936,9 @@ function episodeMedia(item, video) {
     videoId: video.id,
     label: episodeLabel(video) + (video.title ? ` · ${video.title}` : ""),
     episode: video.id,
+    season: Number(video.season),
+    episodeNo: Number(video.episode),
+    episodeTitle: video.title || null,
   };
 }
 
@@ -934,6 +1014,7 @@ async function selectSources(media, target, autoplay) {
   const token = version;
   const selection = Symbol();
   target.selection = selection;
+  if (sourceSheet && target.parentNode === sourceSheet && !sourceSheet.open) sourceSheet.showModal();
   const title = el(
     "h2",
     { tabindex: "-1" },
@@ -941,7 +1022,7 @@ async function selectSources(media, target, autoplay) {
   );
   target.replaceChildren(title, status("Finding available streams…"));
   title.focus();
-  target.scrollIntoView({ block: "nearest" });
+  if (!android) target.scrollIntoView({ block: "nearest" });
   if (!settings.addons.length) {
     target.replaceChildren(
       title,
@@ -1002,8 +1083,8 @@ async function selectSources(media, target, autoplay) {
     settings.preferred,
   );
   if (!streams.length) {
-    const explanation = successful.some((item) => item.torrentOnly)
-      ? "This provider returned torrent hashes. Use a provider configuration that returns direct HTTPS streams."
+    const explanation = !android && successful.some((item) => item.torrentOnly)
+      ? "This provider only returned torrents. The Windows app needs a direct video link."
       : all.length && !successful.length
         ? "The playback providers are unavailable. Try again."
         : "No compatible streams were returned for this title.";
@@ -1024,7 +1105,8 @@ async function selectSources(media, target, autoplay) {
     title.focus();
     return;
   }
-  const playable = streams.filter((stream) => stream.url);
+  const canPlay = (stream) => Boolean(stream.url || (android && stream.torrent));
+  const playable = streams.filter(canPlay);
   if (autoplay && playable.length) {
     play(media, playable.slice(0, 5));
     return;
@@ -1036,19 +1118,19 @@ async function selectSources(media, target, autoplay) {
         class: "line-item",
         type: "button",
         click: () =>
-          stream.url ? play(media, [stream]) : openExternal(stream.external),
+          canPlay(stream) ? play(media, [stream]) : openExternal(stream.external),
       },
       el("strong", {}, stream.name),
       el(
         "span",
         { class: "muted" },
-        [stream.provider, stream.quality, stream.url ? "" : "Opens in browser"]
+        [stream.provider, stream.quality, stream.torrent ? "Torrent" : canPlay(stream) ? "" : "Opens in browser"]
           .filter(Boolean)
           .join(" · "),
       ),
     ),
   );
-  target.replaceChildren(title, ...rows);
+  target.replaceChildren(title, android ? tvButton(media) : "", ...rows);
   title.focus();
 }
 
@@ -1085,6 +1167,7 @@ function record(media, position, duration, complete = false) {
     .sort((a, b) => b[1].updated - a[1].updated)
     .slice(0, 40);
   settings.progress = Object.fromEntries(progress);
+  if (guestLibrary) MoonCatAccount.record(media, position, duration, complete);
   persist();
 }
 
@@ -1095,6 +1178,7 @@ window.__mooncatProgress = (token, position, duration, complete) => {
 };
 
 function play(media, streams) {
+  if (sourceSheet?.open) sourceSheet.close();
   const resume = settings.progress[media.videoId]?.position || 0;
   if (android) {
     const token = String(Date.now()) + Math.random().toString(36).slice(2);
@@ -1108,6 +1192,12 @@ function play(media, streams) {
         streams,
         resume,
         language: settings.preferred,
+        contentId: media.item.id,
+        videoId: media.videoId,
+        type: media.item.type,
+        season: media.season ?? null,
+        episode: media.episodeNo ?? null,
+        episodeTitle: media.episodeTitle ?? null,
       }),
     );
     return;
@@ -1369,7 +1459,9 @@ async function renderPage() {
   const tab = page === "studio" ? "studios" : page === "detail" ? "" : page;
   renderNav(tab);
   main.replaceChildren();
-  main.className = "";
+  main.className = page === "home" ? "browse-home" : "";
+  refreshTvPanel = undefined;
+  sourceSheet = undefined;
   main.setAttribute("aria-busy", "true");
   window.scrollTo(0, 0);
   if (token > 1) main.focus({ preventScroll: true });
@@ -1399,6 +1491,13 @@ async function renderPage() {
 
 async function start() {
   try {
+    if (android) {
+      document.body.classList.add("phone");
+      document.querySelector(".brand img").src = "logos/mooncat-phone.webp";
+      const connect = el("button", {class:"phone-action", type:"button", "aria-label":"TV connection", click: () => navigate("settings")}, icon(tvGlyph));
+      const settingsButton = el("button", {class:"phone-action", type:"button", "aria-label":"Settings", click: () => navigate("settings")}, icon(sections.settings[1]));
+      document.querySelector(".chrome").append(connect, settingsButton);
+    }
     const requests = [
       fetch("catalogues.json").then((response) => response.json()),
       android
@@ -1408,6 +1507,7 @@ async function start() {
         : MoonCat.rpc("state", {}),
     ];
     const [data, stored] = await Promise.allSettled(requests);
+    if (android && stored.status === "fulfilled" && !Array.isArray(stored.value?.addons)) settings.addons = [defaultTorrentio];
     if (data.status === "rejected") throw data.reason;
     catalogues = data.value;
     if (
@@ -1421,6 +1521,23 @@ async function start() {
           stored.value[key] !== null
         )
           settings[key] = stored.value[key];
+    }
+    if (android && typeof MoonCatAccount !== "undefined") {
+      MoonCatAccount.onSnapshot(snapshot => {
+        if (snapshot) {
+          guestLibrary ||= { list: settings.list, progress: settings.progress };
+          Object.assign(settings, snapshot);
+        } else if (guestLibrary) {
+          Object.assign(settings, guestLibrary);
+          guestLibrary = undefined;
+        }
+        if (lastRoute === "home" || lastRoute === "library") {
+          lastRoute = "";
+          renderPage();
+        }
+      });
+      MoonCatAccount.start();
+      window.mooncatOpenAccount = () => navigate("settings");
     }
     document
       .querySelector(".top-search")

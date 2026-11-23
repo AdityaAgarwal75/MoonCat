@@ -59,7 +59,8 @@ internal fun PlayerRuntimeController.startInitialPlaybackIfNeeded() {
                 preparePlaybackBeforeStart(
                     url = localUrl,
                     headers = emptyMap(),
-                    loadSavedProgress = true
+                    loadSavedProgress = true,
+                    handoffPositionMs = navigationArgs.handoffPositionMs
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -84,7 +85,8 @@ internal fun PlayerRuntimeController.startInitialPlaybackIfNeeded() {
     preparePlaybackBeforeStart(
         url = currentStreamUrl,
         headers = currentHeaders,
-        loadSavedProgress = !navigationArgs.startFromBeginning
+        loadSavedProgress = !navigationArgs.startFromBeginning,
+        handoffPositionMs = navigationArgs.handoffPositionMs
     )
 }
 

@@ -104,6 +104,20 @@ const MoonCat = (() => {
     return `${base}/${resource}/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`;
   }
 
+  function torrentRoute(entry, directUrl) {
+    if (!window.MoonCatAndroid || directUrl || typeof entry.infoHash !== "string") return null;
+    const infoHash = entry.infoHash.trim().toLowerCase();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(infoHash)) return null;
+    const fileIndex = entry.fileIdx ?? null;
+    if (fileIndex !== null && (!Number.isInteger(fileIndex) || fileIndex < 0 || fileIndex > 65535)) return null;
+    const filename = entry.behaviorHints?.filename;
+    const trackers = Array.isArray(entry.sources)
+      ? entry.sources.filter(value => typeof value === "string" && value.length <= 512 && /^tracker:(?:udp|https?):\/\//i.test(value))
+          .slice(0, 20).map(value => value.slice(8))
+      : [];
+    return { infoHash, fileIndex, filename: typeof filename === "string" ? filename.slice(0, 512) : "", trackers };
+  }
+
   function orderedSources(groups, preferred) {
     const unique = new Set();
     return groups
@@ -112,6 +126,7 @@ const MoonCat = (() => {
       .flatMap(({ entry, provider }) => {
         const url = safeUrl(entry.url);
         const external = safeUrl(entry.externalUrl);
+        const torrent = torrentRoute(entry, url);
         const labels = [
           entry.name,
           entry.title,
@@ -130,8 +145,10 @@ const MoonCat = (() => {
           bytes > 6e9
         )
           return [];
-        if (!url && !external) return [];
-        const key = url || external;
+        if (!url && !torrent && !external) return [];
+        const key = torrent
+          ? JSON.stringify([torrent.infoHash, torrent.fileIndex, torrent.fileIndex === null ? torrent.filename : ""])
+          : url || external;
         const headers = Object.fromEntries(
           Object.entries(
             entry.behaviorHints?.proxyHeaders?.request || {},
@@ -168,10 +185,11 @@ const MoonCat = (() => {
           {
             url,
             external,
+            torrent,
             provider,
             headers,
             name:
-              entry.title || entry.name || entry.description || "Direct stream",
+              entry.title || entry.name || entry.description || (torrent ? "Torrent source" : "Direct stream"),
             quality:
               resolution === 0 ? "1080p" : resolution === 1 ? "720p" : "",
             language,
@@ -184,9 +202,10 @@ const MoonCat = (() => {
       })
       .sort(
         (a, b) =>
-          Number(!a.url) - Number(!b.url) ||
+          Number(!a.url && !a.torrent) - Number(!b.url && !b.torrent) ||
           a.language - b.language ||
           a.resolution - b.resolution ||
+          Number(!a.url) - Number(!b.url) ||
           b.seeds - a.seeds,
       );
   }

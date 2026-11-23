@@ -156,6 +156,7 @@ private sealed interface ExperienceModeLoadState {
 private fun settingsSectionSpec(category: SettingsCategory): SettingsSectionSpec = when (category) {
     SettingsCategory.ACCOUNT -> SettingsSectionSpec(category, stringResource(R.string.settings_account), Icons.Default.Person, destination = SettingsSectionDestination.Inline)
     SettingsCategory.PROFILES -> SettingsSectionSpec(category, stringResource(R.string.settings_profiles), Icons.Default.People, destination = SettingsSectionDestination.Inline)
+    SettingsCategory.PHONE_HANDOFF -> SettingsSectionSpec(category, stringResource(R.string.phone_handoff_title), Icons.Default.Link, destination = SettingsSectionDestination.External)
     SettingsCategory.WATCH_PARTY -> SettingsSectionSpec(category, stringResource(R.string.party_title), Icons.Rounded.Groups, destination = SettingsSectionDestination.Inline)
     SettingsCategory.APPEARANCE -> SettingsSectionSpec(category, stringResource(R.string.appearance_title), Icons.Default.Palette, destination = SettingsSectionDestination.Inline)
     SettingsCategory.LAYOUT -> SettingsSectionSpec(category, stringResource(R.string.settings_layout), Icons.Default.GridView, destination = SettingsSectionDestination.Inline)
@@ -179,6 +180,7 @@ fun SettingsScreen(
     onNavigateToSupportersContributors: () -> Unit = {},
     onNavigateToLicensesAttributions: () -> Unit = {},
     onNavigateToWatchParty: () -> Unit = {},
+    onNavigateToPhoneHandoff: (() -> Unit)? = null,
     profileViewModel: ProfileSettingsViewModel = hiltViewModel(),
     experienceModeViewModel: ExperienceModeSettingsViewModel = hiltViewModel(),
     partyViewModel: PartyViewModel = hiltViewModel()
@@ -204,12 +206,13 @@ fun SettingsScreen(
 
     val isEssentialMode = loadedExperienceMode == ExperienceMode.ESSENTIAL
 
-    val visibleCategories = remember(isPrimaryProfileActive, isEssentialMode, isWatchPartyAvailable) {
+    val visibleCategories = remember(isPrimaryProfileActive, isEssentialMode, isWatchPartyAvailable, onNavigateToPhoneHandoff != null) {
         visibleSettingsCategories(
             isPrimaryProfile = isPrimaryProfileActive,
             isEssentialMode = isEssentialMode,
             isDebugBuild = BuildConfig.IS_DEBUG_BUILD,
-            isWatchPartyAvailable = isWatchPartyAvailable
+            isWatchPartyAvailable = isWatchPartyAvailable,
+            isPhoneHandoffAvailable = onNavigateToPhoneHandoff != null
         )
     }
     val visibleSections = visibleCategories.map { category -> settingsSectionSpec(category) }
@@ -430,6 +433,7 @@ fun SettingsScreen(
                     allowDetailAutofocus = false
                     when (section.category) {
                         SettingsCategory.ACCOUNT -> onNavigateToAuthQrSignIn()
+                        SettingsCategory.PHONE_HANDOFF -> onNavigateToPhoneHandoff?.invoke()
                         else -> Unit
                     }
                 } else {
@@ -854,6 +858,7 @@ private fun SettingsDetailPane(
                 null
             }
         )
+        SettingsCategory.PHONE_HANDOFF -> Unit
         SettingsCategory.WATCH_PARTY -> PartySettingsContent(
             onOpen = onNavigateToWatchParty,
             initialFocusRequester = if (allowDetailAutofocus) {

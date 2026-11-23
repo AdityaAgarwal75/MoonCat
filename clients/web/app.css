@@ -687,3 +687,140 @@ kbd {
 .theater video {
   max-height: calc(100vh - 130px);
 }
+
+/* The handset keeps navigation and playback actions within thumb reach. */
+.phone {
+  --bg: #070708;
+  --surface: #17171c;
+  --line: #29292d;
+  --muted: #b4b4bc;
+  --white: #fbfafa;
+  --accent: #e4d5ff;
+  --gutter: 18px;
+  background: var(--bg);
+}
+.phone .chrome {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  height: 57px;
+  min-height: 57px;
+  padding: 0 13px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  border: 0;
+  background: #070708;
+}
+.phone .brand { margin-right: auto; padding: 0 4px; font-size: 21px; }
+.phone .brand img { width: 33px; height: 33px; border-radius: 10px; }
+.phone .top-search { display: none; }
+.phone-action {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  background: transparent;
+  border: 0;
+  border-radius: 22px;
+  color: var(--white);
+}
+.phone-action svg { width: 22px; height: 22px; }
+.phone #nav {
+  position: fixed;
+  inset: auto 0 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  background: #101013;
+  border-top: 1px solid #242428;
+  padding: 5px 10px max(5px,env(safe-area-inset-bottom));
+}
+.phone .nav-link, .phone .nav-link[data-route="search"] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 0;
+  min-height: 48px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+.phone .nav-link[aria-current="page"] { background: transparent; color: #fff; }
+.phone .nav-link[aria-current="page"] svg {
+  filter: drop-shadow(0 0 5px #c2a1ff85);
+  color: var(--accent);
+}
+.phone .nav-link kbd { display: none; }
+.phone main { margin-left: 0; padding: 15px var(--gutter) 82px; }
+.phone h1 { font-size: clamp(1.65rem, 7vw, 2.8rem); line-height: 1.07; }
+.phone .hero { border-radius: 22px; min-height: 0; background: #191522; }
+.phone .browse-home .hero { min-height: clamp(330px, 103vw, 484px); }
+.phone .browse-home .hero-media { object-position: center 25%; }
+.phone .hero::after {
+  background: linear-gradient(0deg,#09090b 0%,#09090be8 20%,#09090b72 50%,#09090b08 75%);
+}
+.phone .hero-copy { width: 100%; padding: 19px 16px 17px; gap: 10px; }
+.phone .metadata { color: #e3dce9; font-weight: 550; font-size: 12px; }
+.phone .hero .actions { width: 100%; flex-wrap: wrap; gap: 7px; }
+.phone .hero .button { padding-inline: 11px; flex: 1 0 auto; }
+.phone .button { min-height: 46px; background: #202025; border: 1px solid #313138; border-radius: 10px; font-size: 14px; }
+.phone .button.primary { color: #151319; background: #faf8fd; border-color: #faf8fd; }
+.phone .detail .hero { display: block; overflow: hidden; background: #111114; }
+.phone .detail .hero::after { display: none; }
+.phone .detail .hero-media { position: relative; display: block; aspect-ratio: 16/9; height: auto; object-position: center 35%; }
+.phone .detail .hero-copy { padding: 16px; }
+.phone .detail-top { margin: 0 0 10px; }
+.phone .detail-top .button { min-height: 44px; }
+.phone .synopsis { margin: 0 0 22px; }
+.phone .synopsis summary { min-height: 44px; cursor: pointer; padding-block: 9px; font-weight: 650; }
+.phone .synopsis p { color: var(--muted); }
+.phone .episodes:empty { display: none; }
+.phone .rail {
+  grid-auto-columns: clamp(102px, 28vw, 174px);
+  gap: 10px;
+  scrollbar-width: none;
+}
+.phone .section-head { margin-bottom: 7px; }
+.phone .row-controls { display: none; }
+.phone .card-image { background: #19191e; border-color: #29292e; }
+.phone .card-name { font-size: 13px; }
+.phone .connection-card { padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.phone .connection-title { display: flex; align-items: center; gap: 10px; }
+.phone .connection-title svg { width: 22px; height: 22px; color: var(--accent); }
+.phone .notice { bottom: 70px; left: 14px; right: 14px; max-width: none; }
+.phone .browse-more { margin-top: -13px; }
+@media (min-width: 720px) {
+  .phone main { max-width: 940px; margin: auto; }
+  .phone .browse-home .hero { min-height: 430px; }
+  .phone .browse-home .hero-media { object-position: center 30%; }
+}
+.phone .source-sheet {
+  margin: auto 0 0;
+  padding: 0 16px 20px;
+  width: 100%;
+  max-width: none;
+  max-height: min(78vh, 700px);
+  border: 1px solid #33333b;
+  border-radius: 22px 22px 0 0;
+  background: #141419;
+  color: var(--white);
+  overscroll-behavior: contain;
+}
+.phone .source-sheet::backdrop { background: #000b; }
+.phone .sheet-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #141419;
+  font-weight: 700;
+}
+.phone .source-sheet .episodes { margin: 4px 0 0; }
+.phone .source-sheet .line-item { background: #202026; }
+.phone .source-sheet .status { padding: 8px 0; }

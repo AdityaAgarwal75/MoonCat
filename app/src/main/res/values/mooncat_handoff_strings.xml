@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="phone_handoff_title">Phone pairing</string>
+    <string name="phone_handoff_instructions">Connect both devices to the same Wi-Fi. In MoonCat on your phone, open Settings → Pair a TV and scan this code.</string>
+    <string name="phone_handoff_offline">Connect the TV to your local network and try again.</string>
+    <string name="phone_handoff_pending">Scan this code within two minutes.</string>
+    <string name="phone_handoff_ready">Phone paired. Leave MoonCat open on this TV to receive playback.</string>
+    <string name="phone_handoff_inactive">Show a QR code to pair your phone.</string>
+    <string name="phone_handoff_show_code">Show QR code</string>
+    <string name="phone_handoff_disconnect">Disconnect phones</string>
+</resources>

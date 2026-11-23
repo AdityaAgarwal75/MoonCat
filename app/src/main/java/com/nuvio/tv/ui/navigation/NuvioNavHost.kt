@@ -14,15 +14,24 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.nuvio.tv.core.build.AppFeaturePolicy
+import com.nuvio.tv.core.handoff.PhoneHandoffReceiver
+import com.nuvio.tv.ui.screens.handoff.PhoneHandoffScreen
+import com.nuvio.tv.ui.screens.settings.ProfileSettingsViewModel
 import com.nuvio.tv.core.party.PartyMedia
 import com.nuvio.tv.domain.model.ExperienceMode
 import com.nuvio.tv.data.mediaserver.ServerCatalog
@@ -79,6 +88,46 @@ private fun PlaybackNavHost(
 ) {
     val playbackAvailability = LocalPlaybackAvailability.current
     val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val receiver = remember(context) { PhoneHandoffReceiver(context.applicationContext) }
+    val profileSettings: ProfileSettingsViewModel = hiltViewModel()
+    val primaryProfile by profileSettings.isPrimaryProfileActive.collectAsStateWithLifecycle()
+    DisposableEffect(receiver, lifecycle, navController, primaryProfile) {
+        fun startReceiver() {
+            if (!primaryProfile) return
+            receiver.resume { handoff ->
+                val route = navController.currentDestination?.route ?: return@resume false
+                if (route == Screen.ExperienceModeSelection.route || route == Screen.LayoutSelection.route ||
+                    route == Screen.AuthQrSignIn.route || route == Screen.AuthSignIn.route
+                ) return@resume false
+                val target = Screen.Stream.createRoute(
+                    videoId = handoff.videoId,
+                    contentType = handoff.type,
+                    title = handoff.title,
+                    season = handoff.season,
+                    episode = handoff.episode,
+                    episodeName = handoff.episodeTitle,
+                    contentId = handoff.contentId,
+                    contentName = handoff.title,
+                    returnToHomeOnBack = true,
+                    handoffPositionMs = handoff.positionMs
+                )
+                if (route == Screen.Player.route || route == Screen.Stream.route) navController.popBackStack()
+                if (navController.currentDestination?.route == Screen.Stream.route) navController.popBackStack()
+                navController.navigate(target)
+                true
+            }
+        }
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) startReceiver()
+            if (event == Lifecycle.Event.ON_PAUSE) receiver.pause()
+        }
+        lifecycle.addObserver(observer)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            receiver.pause()
+        }
+    }
     fun isStreamToPlayer(from: String, to: String): Boolean {
         return from.startsWith("stream/") && to.startsWith("player/")
     }
@@ -547,6 +596,11 @@ private fun PlaybackNavHost(
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
+                },
+                navArgument("handoffPositionMs") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 }
             )
         ) { backStackEntry ->
@@ -564,6 +618,7 @@ private fun PlaybackNavHost(
             val startFromBeginning = streamArgs
                 ?.getString("startFromBeginning")
                 ?.toBooleanStrictOrNull() == true
+            val handoffPositionMs = streamArgs?.getString("handoffPositionMs")?.toLongOrNull()
             StreamScreen(
                 startFromBeginning = startFromBeginning,
                 restoreSourceSelection = restoreSourceSelection,
@@ -638,7 +693,8 @@ private fun PlaybackNavHost(
                                 sources = playbackInfo.sources,
                                 contentLanguage = playbackInfo.contentLanguage,
                                 profileId = playbackInfo.profileId,
-                                audioDelayMs = playbackInfo.audioDelayMs
+                                audioDelayMs = playbackInfo.audioDelayMs,
+                                handoffPositionMs = handoffPositionMs
                             )
                         )
                     }
@@ -680,7 +736,8 @@ private fun PlaybackNavHost(
                                 sources = playbackInfo.sources,
                                 contentLanguage = playbackInfo.contentLanguage,
                                 profileId = playbackInfo.profileId,
-                                audioDelayMs = playbackInfo.audioDelayMs
+                                audioDelayMs = playbackInfo.audioDelayMs,
+                                handoffPositionMs = handoffPositionMs
                             )
                         ) {
                             popUpTo(Screen.Stream.route) { inclusive = true }
@@ -836,6 +893,11 @@ private fun PlaybackNavHost(
                     defaultValue = null
                 },
                 navArgument("audioDelayMs") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("handoffPositionMs") {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
@@ -1253,8 +1315,13 @@ private fun PlaybackNavHost(
                 onNavigateToLicensesAttributions = {
                     navController.navigate(Screen.LicensesAttributions.route)
                 },
-                onNavigateToWatchParty = { navController.navigate(Screen.WatchParty.createRoute()) }
+                onNavigateToWatchParty = { navController.navigate(Screen.WatchParty.createRoute()) },
+                onNavigateToPhoneHandoff = { navController.navigate(Screen.PhoneHandoff.route) }
             )
+        }
+
+        composable(Screen.PhoneHandoff.route) {
+            PhoneHandoffScreen(receiver)
         }
 
         composable(
