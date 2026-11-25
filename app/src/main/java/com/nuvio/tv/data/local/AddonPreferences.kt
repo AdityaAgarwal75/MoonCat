@@ -26,6 +26,7 @@ class AddonPreferences @Inject constructor(
 ) {
     companion object {
         private const val FEATURE = "addon_preferences"
+        private const val TORRENTS_DB = "https://torrentsdb.com"
     }
 
     private fun effectiveProfileId(): Int {
@@ -90,15 +91,14 @@ class AddonPreferences @Inject constructor(
         val marker = booleanPreferencesKey("mooncat_sources_added_v106")
         profileManager.profiles.value.map { it.id }.ifEmpty { listOf(1) }.forEach { profileId ->
             store(profileId).edit { prefs ->
-                val removeDbMarker = booleanPreferencesKey("mooncat_remove_torrentsdb_v2")
-                if (prefs[removeDbMarker] != true) {
+                val addDbMarker = booleanPreferencesKey("mooncat_torrentsdb_default_alpha5")
+                if (prefs[addDbMarker] != true) {
                     val current = getCurrentList(prefs, profileId)
-                    val retained = current.filterNot { url ->
-                        val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull()
-                        host == "torrentsdb.com" || host?.endsWith(".torrentsdb.com") == true
+                    val configured = current.any { url ->
+                        runCatching { java.net.URI(url).host }.getOrNull().equals("torrentsdb.com", true)
                     }
-                    if (retained != current) prefs[orderedUrlsKey] = gson.toJson(retained)
-                    prefs[removeDbMarker] = true
+                    if (!configured) prefs[orderedUrlsKey] = gson.toJson(current + TORRENTS_DB)
+                    prefs[addDbMarker] = true
                 }
                 if (prefs[marker] == true) return@edit
                 val urls = getCurrentList(prefs, profileId)
@@ -285,6 +285,7 @@ class AddonPreferences @Inject constructor(
         "https://v3-channels.strem.io",
         if (profileId == 1) "https://torrentio.strem.fun/language=hindi"
         else "https://torrentio.strem.fun/language=english",
-        "https://thepiratebay-plus.strem.fun"
+        "https://thepiratebay-plus.strem.fun",
+        TORRENTS_DB
     )
 }

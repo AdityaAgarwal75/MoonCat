@@ -31,6 +31,18 @@ class PlaybackSourceSessionTest {
         assertEquals(torrent, PlaybackSourceSession().select(states, "hi", { null }, { null }))
     }
 
+    @Test fun `a failed torrent probe does not hide a later playable provider`() = runTest {
+        val torrent = source("1080p Hindi seeds: 1").copy(infoHash = "slow")
+        val http = source("1080p Hindi", "https://cdn.example/ready")
+        val states = MutableStateFlow(PlaybackSourceSession.Snapshot(listOf(torrent)))
+        val winner = async {
+            PlaybackSourceSession().select(states, "hi", { it.single() }, { delay(500); null })
+        }
+        advanceTimeBy(400)
+        states.value = PlaybackSourceSession.Snapshot(listOf(torrent, http), complete = true)
+        assertEquals(http, winner.await())
+    }
+
     @Test fun `new results arriving during a failed probe are tested`() = runTest {
         val bad = source("1080p Hindi", "https://cdn.example/bad")
         val good = source("1080p Hindi", "https://cdn.example/good")
@@ -39,9 +51,9 @@ class PlaybackSourceSessionTest {
             if (bad in batch) { delay(500); null } else good
         }, { null }) }
         runCurrent()
-        advanceTimeBy(200)
+        advanceTimeBy(400)
         states.value = PlaybackSourceSession.Snapshot(listOf(bad, good), true)
-        advanceTimeBy(300)
+        advanceTimeBy(400)
         runCurrent()
         assertEquals(good, choice.await())
     }

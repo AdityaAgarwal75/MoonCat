@@ -42,12 +42,11 @@ class PlaybackSourceSession(
     ): Stream? = coroutineScope {
         val first = snapshots.first { it.candidates.isNotEmpty() || it.complete }
         if (first.candidates.isEmpty()) return@coroutineScope null
-        withTimeoutOrNull(languageGraceMs) {
-            snapshots.first { snapshot -> snapshot.complete || snapshot.candidates.any {
-                MoonCatSourcePolicy.languageTier(it, language) == 0
-            } }
+        if (!first.complete) {
+            withTimeoutOrNull(languageGraceMs) { snapshots.first { it.complete } }
         }
         val attempted = mutableSetOf<String>()
+        var torrentFallback: Stream? = null
         while (true) {
             val snapshot = snapshots.first { state ->
                 state.complete || state.candidates.any { it.playbackRequestKey() !in attempted }
@@ -56,9 +55,12 @@ class PlaybackSourceSession(
             // These routes must be resolved by the normal player, not an HTTP sample.
             candidates.firstOrNull { it.serverTarget != null || it.isYouTube() ||
                 (it.isDirectDebrid() && it.getStreamUrl() == null) }?.let { return@coroutineScope it }
-            if (candidates.isEmpty()) return@coroutineScope null
+            if (candidates.isEmpty()) return@coroutineScope torrentFallback
             val direct = candidates.filterNot { it.isTorrent() }.filter { it.getStreamUrl() != null }
-            val torrents = candidates.filter { it.isTorrent() }.take(MoonCatTorrentRace.MAX_CANDIDATES)
+            val torrentCandidates = candidates.filter { it.isTorrent() }
+            // Let a second provider compete even if the first supplies most of the shortlist.
+            val torrents = (torrentCandidates.distinctBy { it.addonName }.take(2) + torrentCandidates)
+                .distinctBy { it.playbackRequestKey() }.take(MoonCatTorrentRace.MAX_CANDIDATES)
             val ignored = candidates.filterNot { it in direct || it.isTorrent() }
             attempted.addAll((direct + torrents + ignored).map { it.playbackRequestKey() })
             val results = Channel<Stream?>(2)
@@ -83,11 +85,10 @@ class PlaybackSourceSession(
             // If no preload is ready, let the normal player start the best HD torrent.
             // Manual selection already uses this same playback path. Metadata can take
             // longer than the bounded race, and the player has its own failure recovery.
-            val fallback = MoonCatSourcePolicy.readinessOrder(candidates.filter { it.isTorrent() }, language)
-                .firstOrNull()
-            if (fallback != null) return@coroutineScope fallback
-            if (snapshot.complete && snapshots.value.candidates.none { it.playbackRequestKey() !in attempted }) {
-                return@coroutineScope null
+            if (torrentFallback == null) torrentFallback = torrents.firstOrNull()
+            val latest = snapshots.value
+            if (latest.candidates.none { it.playbackRequestKey() !in attempted }) {
+                if (torrentFallback != null || latest.complete) return@coroutineScope torrentFallback
             }
         }
         @Suppress("UNREACHABLE_CODE") null

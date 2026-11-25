@@ -395,10 +395,10 @@ fun StreamScreen(
         modifier = Modifier.fillMaxSize()
     ) {
         // Full screen backdrop
-        StreamBackdrop(
+        if (!showOverlay) StreamBackdrop(
             backdrop = uiState.backdrop ?: uiState.poster,
             isLoading = uiState.isLoading,
-            modifier = if (streamHazeState != null && uiState.autoPlayDecided && !showOverlay) {
+            modifier = if (streamHazeState != null && uiState.autoPlayDecided) {
                 Modifier.hazeSource(state = streamHazeState)
             } else {
                 Modifier

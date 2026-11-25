@@ -12,6 +12,7 @@ import com.nuvio.tv.core.debrid.DirectDebridResolver
 import com.nuvio.tv.core.debrid.DirectDebridStreamPreparer
 import com.nuvio.tv.core.plugin.PluginManager
 import com.nuvio.tv.core.mooncat.MoonCatSourcePolicy
+import com.nuvio.tv.core.mooncat.MoonCatSourceRace
 import com.nuvio.tv.core.mooncat.PlaybackPreferences
 import com.nuvio.tv.core.mooncat.PlaybackSourceSession
 import com.nuvio.tv.core.network.NetworkResult
@@ -86,6 +87,7 @@ import javax.inject.Inject
 
 private const val TAG = "StreamScreenViewModel"
 private const val DIRECT_AUTOPLAY_HARD_TIMEOUT_MS = 10_000L
+private const val SOURCE_READINESS_BUDGET_MS = 4_500L
 private const val STREAM_FILTER_PAGE_SIZE = 100
 
 @HiltViewModel
@@ -469,9 +471,6 @@ class StreamScreenViewModel @Inject constructor(
                 }
             }
 
-            // Every new request goes through the readiness race. Reusing an old
-            // URL here bypassed source discovery and could strand autoplay.
-
             updateUiStateIfChanged {
                 it.copy(
                     isLoading = forceRefresh || it.allStreams.isEmpty(),
@@ -525,8 +524,8 @@ class StreamScreenViewModel @Inject constructor(
                     val streams = _uiState.value.allStreams
                     val failures = failedAutoPlayIdentities.toSet()
                     val anime = PlaybackPreferences.isAnime(_uiState.value.genres, contentLanguage, videoId)
-                    val selected = withContext(Dispatchers.Default) {
-                        StreamAutoPlaySelector.selectAutoPlayStream(
+                    val candidates = withContext(Dispatchers.Default) {
+                        StreamAutoPlaySelector.selectAutoPlayCandidates(
                             streams = if (failures.isEmpty()) streams else streams.filter { it.playbackRequestKey() !in failures },
                             mode = playerSettings.streamAutoPlayMode,
                             regexPattern = playerSettings.streamAutoPlayRegex,
@@ -542,14 +541,39 @@ class StreamScreenViewModel @Inject constructor(
                             usePlaybackPreferences = true
                         )
                     }
-                    selectionSnapshots.value = PlaybackSourceSession.Snapshot(listOfNotNull(selected), complete)
+                    selectionSnapshots.value = PlaybackSourceSession.Snapshot(candidates, complete)
                     if (!autoPlayHandledForSession && !resolvedAutoPlayTarget &&
-                        sourceSelectionJob?.isActive != true && selected != null
+                        sourceSelectionJob?.isActive != true && candidates.isNotEmpty()
                     ) {
                         sourceSelectionJob = launch {
-                            val winner = PlaybackSourceSession().selectMetadata(
-                                selectionSnapshots, playerSettings.preferredAudioLanguage, preserveOrder = true
-                            )
+                            val language = playerSettings.preferredAudioLanguage
+                            val session = PlaybackSourceSession(torrentReadyTimeoutMs = 3_800L)
+                            val useReadiness = playerSettings.streamAutoPlayMode == StreamAutoPlayMode.FIRST_STREAM &&
+                                !isNativeServerRequest && persistedBingeGroup == null &&
+                                playerSettings.playerPreference != PlayerPreference.EXTERNAL
+                            val winner = if (useReadiness) {
+                                if (playerSettings.showPlayerLoadingStatus) {
+                                    updateUiStateIfChanged {
+                                        it.copy(directAutoPlayMessage = context.getString(R.string.stream_checking_readiness))
+                                    }
+                                }
+                                val remaining = DIRECT_AUTOPLAY_HARD_TIMEOUT_MS -
+                                    (android.os.SystemClock.elapsedRealtime() - searchStartedAt) - 1_000L
+                                withTimeoutOrNull(minOf(SOURCE_READINESS_BUDGET_MS, remaining)) {
+                                    session.select(
+                                        snapshots = selectionSnapshots,
+                                        language = language,
+                                        probeDirect = { MoonCatSourceRace.choose(it, language) },
+                                        prepareTorrent = { shortlist ->
+                                            if (torrentSettings.settings.first().p2pEnabled) {
+                                                torrentService.chooseReadySource(shortlist, PlaybackPreferences.MAX_BYTES, language)
+                                            } else null
+                                        }
+                                    )
+                                } ?: selectionSnapshots.value.candidates.firstOrNull()
+                            } else {
+                                session.selectMetadata(selectionSnapshots, language, preserveOrder = true)
+                            }
                             ensureActive()
                             if (winner != null && !autoPlayHandledForSession && !resolvedAutoPlayTarget) {
                                 resolvedAutoPlayTarget = true

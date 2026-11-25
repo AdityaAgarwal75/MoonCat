@@ -1,7 +1,6 @@
-# MoonCat 3.0.0-alpha.4
+# MoonCat 3.0.0-alpha.5 for Fire TV
 
-- Autoplay and next-episode reuse skip blank URLs and malformed torrent routes. A blank URL can still play as a torrent when an addon supplies an info hash. Manual fallback remains available when a source fails to resolve.
-- Autoplay preserves a playable saved release group for the next episode. A saved torrent reporting zero seeders yields to a viable alternative. Custom regex rules honor the scope of lookaheads.
-- Torrentio enters the bounded discovery queue first. Results from other configured providers still appear as they arrive. Discovery reports when the returned files are 4K or over 6 GB and keeps eligible episodes when a debrid provider reports the size of the whole season pack.
-- The source screen ranks provider results once for autoplay and applies badges in batches. Badge updates keep the latest source metadata and avoid rebuilding the whole list for every few results.
-- Version code 30003 retains package `dev.mooncat.tv.v2` and the trusted signing identity for in-place updates.
+- Automatic playback checks a shortlist of HTTP and torrent sources for readiness before choosing what to play. The check has a time limit, and manual source selection remains available.
+- TorrentsDB joins Torrentio as a built-in source provider. Direct torrent sources do not need a debrid API key.
+- The loading screen explains when MoonCat is comparing sources and avoids drawing the backdrop twice.
+- The signed Fire TV APK updates the existing MoonCat V3 app in place. The standalone Speed Preview is a separate app.
